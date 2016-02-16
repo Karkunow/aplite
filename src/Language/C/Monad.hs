@@ -176,7 +176,15 @@ defaultCEnv fl = CEnv
     }
 
 -- | Code generation type constraints
-type MonadC m = (Functor m, Applicative m, Monad m, MonadState CEnv m, MonadException m, MonadFix m)
+type MonadC m = (Functor m, Applicative m, Monad m, MonadState CEnv m, MonadException m, MonadFix m, MonadInclude m)
+
+class Monad m => MonadInclude m where
+  -- | Add an include pre-processor directive. Specify '<>' or '""' around
+  -- the file name.
+  addInclude :: String -> m ()
+
+instance Monad t => MonadInclude (CGenT t) where
+  addInclude inc = includes %= Set.insert inc
 
 -- | The C code generation monad transformer
 newtype CGenT t a = CGenT { unCGenT :: StateT CEnv (ExceptionT t) a }
@@ -238,17 +246,12 @@ touchVar v = usedVars %= Set.insert (toIdent v (SrcLoc NoLoc))
 setUsedVars :: MonadC m => String -> Set.Set C.Id -> m ()
 setUsedVars fun uvs = funUsedVars %= Map.insert fun uvs
 
--- | Add an include pre-processor directive. Specify '<>' or '""' around
--- the file name.
-addInclude :: MonadC m => String -> m ()
-addInclude inc = includes %= Set.insert inc
-
 -- | Add a local include directive. The argument will be surrounded by '""'
-addLocalInclude :: MonadC m => String -> m ()
+addLocalInclude :: MonadInclude m => String -> m ()
 addLocalInclude inc = addInclude ("\"" ++ inc ++ "\"")
 
 -- | Add a system include directive. The argument will be surrounded by '<>'
-addSystemInclude :: MonadC m => String -> m ()
+addSystemInclude :: MonadInclude m => String -> m ()
 addSystemInclude inc = addInclude ("<" ++ inc ++ ">")
 
 -- | Add a type definition

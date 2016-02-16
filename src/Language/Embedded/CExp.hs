@@ -70,7 +70,7 @@ instance ToExp Word64 where toExp = toExp . toInteger
 -- | Types supported by C
 class (Show a, Eq a, Typeable a, ToExp a) => CType a
   where
-    cType :: MonadC m => proxy a -> m Type
+    cType :: MonadInclude m => proxy a -> m Type
 
 instance CType Bool   where cType _ = addSystemInclude "stdbool.h" >> return [cty| typename bool     |]
 instance CType Int8   where cType _ = addSystemInclude "stdint.h"  >> return [cty| typename int8_t   |]
