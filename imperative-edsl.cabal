@@ -52,7 +52,11 @@ library
 
   other-modules:
     Language.Embedded.Imperative.Backend.C
+    Language.Embedded.Imperative.Backend.JS
     Language.Embedded.Concurrent.Backend.C
+    Language.JS.Monad
+    Language.JS.Expression
+    Language.JS.BinOps
       -- No need to export these since only the instances are interesting
 
   default-language: Haskell2010
