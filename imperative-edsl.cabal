@@ -48,6 +48,7 @@ library
     Language.Embedded.Concurrent
     Language.Embedded.Signature
     Language.Embedded.Backend.C
+    Language.Embedded.Backend.JS
     Language.Embedded.CExp
 
   other-modules:
@@ -55,6 +56,7 @@ library
     Language.Embedded.Imperative.Backend.JS
     Language.Embedded.Concurrent.Backend.C
     Language.JS.Monad
+    Language.JS.Print
     Language.JS.Expression
     Language.JS.BinOps
       -- No need to export these since only the instances are interesting

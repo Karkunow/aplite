@@ -9,11 +9,14 @@ import Data.Typeable
 
 import Data.Int
 import Data.Word
+import Data.Maybe
 
 -- import Language.Embedded.CExp
 import Language.JS.Monad
 import Language.JS.CompExp
-import Language.JS.Syntax hiding (Op, Lit, GE, LE, GT, LT, Neq, Eq, Cast, Cond)
+import Language.JS.Syntax hiding (
+    Op, Lit, GE, LE, GT, LT, Neq, Eq, Cast, Cond, typeOf
+  )
 import qualified Language.JS.Syntax as JS
 
 --------------------------------------------------------------------------------
@@ -25,7 +28,7 @@ class (Show a, Eq a, Typeable a, ToJSExp a) => JSType a
   where
     jsType :: proxy a -> JSGen Type
 
-instance JSType Bool   where jsType _ = pure Bool
+instance JSType Bool   where jsType _ = pure Signed
 instance JSType Int32  where jsType _ = pure Signed
 instance JSType Word32 where jsType _ = pure Unsigned
 instance JSType Double where jsType _ = pure Double
@@ -37,15 +40,15 @@ pJSType :: Proxy JSType
 pJSType = Proxy
 
 {-
-deriveWitness ''CType ''BoolType
-deriveWitness ''CType ''FloatType
-deriveWitness ''CType ''DoubleType
-deriveWitness ''CType ''IntWordType
+deriveWitness ''JSType ''BoolType
+deriveWitness ''JSType ''FloatType
+deriveWitness ''JSType ''DoubleType
+deriveWitness ''JSType ''IntWordType
 
-derivePWitness ''CType ''BoolType
-derivePWitness ''CType ''FloatType
-derivePWitness ''CType ''DoubleType
-derivePWitness ''CType ''IntWordType
+derivePWitness ''JSType ''BoolType
+derivePWitness ''JSType ''FloatType
+derivePWitness ''JSType ''DoubleType
+derivePWitness ''JSType ''IntWordType
 -}
 
 {-
@@ -56,7 +59,6 @@ instance PWitness JSType FunType t
 -}
 #endif
 
-{-
 -- | Return whether the type of the expression is a floating-point numeric type
 isFloat :: forall a . JSType a => CExp a -> Bool
 isFloat a = t == typeOf (undefined :: Float) || t == typeOf (undefined :: Double)
@@ -70,7 +72,6 @@ isExact = not . isFloat
 -- | Return whether the type of the expression is a non-floating-point type
 isExact' :: JSType a => ASTF T a -> Bool
 isExact' = isExact . CExp
--}
 
 --------------------------------------------------------------------------------
 -- * Expressions
@@ -197,12 +198,26 @@ evalSym (ArrIx (IArrEval arr)) = \i ->
 -}
 evalSym (Var v) = error $ "evalCExp: cannot evaluate variable " ++ v
 
+-- | Evaluate an expression
+evalCExp :: CExp a -> a
+evalCExp (CExp e) = go e
+  where
+    go :: AST T sig -> Denotation sig
+    go (Sym (T s)) = evalSym s
+    go (f :$ a)    = go f $ go a
+
+instance EvalExp CExp
+  where
+    litExp a = CExp $ Sym $ T $ Lit (show a) a
+    evalExp  = evalCExp
+
 instance CompJSExp CExp
   where
+    varExp   = CExp . Sym . T . Var . showVar
+      where showVar (MkId v) = show v
     compExp  = compJSExp
     compType = jsType
 
-{-
 -- | One-level constant folding: if all immediate sub-expressions are literals,
 -- the expression is reduced to a single literal
 constFold :: CExp a -> CExp a
@@ -218,7 +233,6 @@ constFold = CExp . match go . unCExp
   -- Deeper constant folding would require a way to witness `Show` for arbitrary
   -- sub-expressions. This is certainly doable, but seems to complicate things
   -- for not much gain (currently).
--}
 
 castAST :: forall a b . Typeable b => ASTF T a -> Maybe (ASTF T b)
 castAST a = simpleMatch go a
@@ -266,8 +280,7 @@ true, false :: CExp Bool
 true  = constant ["<stdbool.h>"] "true" True
 false = constant ["<stdbool.h>"] "false" False
 
-{-
-instance (Num a, Ord a, CType a) => Num (CExp a)
+instance (Num a, Ord a, JSType a) => Num (CExp a)
   where
     fromInteger = value . fromInteger
 
@@ -306,14 +319,14 @@ instance (Num a, Ord a, CType a) => Num (CExp a)
     abs    = error "abs not implemented for CExp"
     signum = error "signum not implemented for CExp"
 
-instance (Fractional a, Ord a, CType a) => Fractional (CExp a)
+instance (Fractional a, Ord a, JSType a) => Fractional (CExp a)
   where
     fromRational = value . fromRational
     a / b = constFold $ sugarSym (T $ Op BiDiv) a b
 
     recip = error "recip not implemented for CExp"
 
-instance (Floating a, Ord a, CType a) => Floating (CExp a)
+instance (Floating a, Ord a, JSType a) => Floating (CExp a)
   where
     pi     = value pi
     a ** b = constFold $ sugarSym (T $ Fun ["<math.h>"] "pow" (**)) a b
@@ -321,7 +334,7 @@ instance (Floating a, Ord a, CType a) => Floating (CExp a)
     cos a  = constFold $ sugarSym (T $ Fun ["<math.h>"] "cos" cos) a
 
 -- | Integer division truncated toward zero
-quot_ :: (Integral a, CType a) => CExp a -> CExp a -> CExp a
+quot_ :: (Integral a, JSType a) => CExp a -> CExp a -> CExp a
 quot_ (LitP 0) b = 0
 quot_ a (LitP 1) = a
 quot_ a b
@@ -331,17 +344,17 @@ quot_ a b        = constFold $ sugarSym (T $ Op BiQuot) a b
 -- | Integer remainder satisfying
 --
 -- > (x `quot_` y)*y + (x #% y) == x
-(#%) :: (Integral a, CType a) => CExp a -> CExp a -> CExp a
+(#%) :: (Integral a, JSType a) => CExp a -> CExp a -> CExp a
 LitP 0 #% _          = 0
 _      #% LitP 1     = 0
 a      #% b | a == b = 0
 a      #% b          = constFold $ sugarSym (T $ Op BiRem) a b
 
-round_ :: (RealFrac a, Integral b, CType b) => CExp a -> CExp b
+round_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
 round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "lround" round)
 
 -- | Integral type casting
-i2n :: (Integral a, Num b, CType b) => CExp a -> CExp b
+i2n :: (Integral a, Num b, JSType b) => CExp a -> CExp b
 i2n a = constFold $ sugarSym (T $ Cast (fromInteger . toInteger)) a
 
 -- | Cast integer to 'Bool'
@@ -376,33 +389,33 @@ a          #|| LitP False = a
 a          #|| b          = constFold $ sugarSym (T $ Op BiOr) a b
 
 -- | Equality
-(#==) :: (Eq a, CType a) => CExp a -> CExp a -> CExp Bool
+(#==) :: (Eq a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #== b
     | a == b, isExact a = true
     | otherwise         = constFold $ sugarSym (T $ Op BiEq) a b
 
 -- | In-equality
-(#!=) :: (Eq a, CType a) => CExp a -> CExp a -> CExp Bool
+(#!=) :: (Eq a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #!= b
     | a == b, isExact a = false
     | otherwise         = constFold $ sugarSym (T $ Op BiNEq) a b
 
-(#<) :: (Ord a, CType a) => CExp a -> CExp a -> CExp Bool
+(#<) :: (Ord a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #< b
     | a == b, isExact a = false
     | otherwise         = constFold $ sugarSym (T $ Op BiLt) a b
 
-(#>) :: (Ord a, CType a) => CExp a -> CExp a -> CExp Bool
+(#>) :: (Ord a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #> b
     | a == b, isExact a = false
     | otherwise         = constFold $ sugarSym (T $ Op BiGt) a b
 
-(#<=) :: (Ord a, CType a) => CExp a -> CExp a -> CExp Bool
+(#<=) :: (Ord a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #<= b
     | a == b, isExact a = true
     | otherwise         = constFold $ sugarSym (T $ Op BiLe) a b
 
-(#>=) :: (Ord a, CType a) => CExp a -> CExp a -> CExp Bool
+(#>=) :: (Ord a, JSType a) => CExp a -> CExp a -> CExp Bool
 a #>= b
     | a == b, isExact a = true
     | otherwise         = constFold $ sugarSym (T $ Op BiGe) a b
@@ -410,7 +423,7 @@ a #>= b
 infix 4 #==, #!=, #<, #>, #<=, #>=
 
 -- | Conditional expression
-cond :: CType a
+cond :: JSType a
     => CExp Bool  -- ^ Condition
     -> CExp a     -- ^ True branch
     -> CExp a     -- ^ False branch
@@ -427,7 +440,7 @@ cond c t f = constFold $ sugarSym (T Cond) c t f
 -- > cond2 ? b $
 -- > cond3 ? c $
 -- >         default
-(?) :: CType a
+(?) :: JSType a
     => CExp Bool  -- ^ Condition
     -> CExp a     -- ^ True branch
     -> CExp a     -- ^ False branch
@@ -436,11 +449,11 @@ cond c t f = constFold $ sugarSym (T Cond) c t f
 
 infixl 1 ?
 
+{-
 -- | Array indexing
 (#!) :: (JSType a, Integral i, Ix i) => IArr i a -> CExp i -> CExp a
 arr #! i = sugarSym (T $ ArrIx arr) i
 -}
-
 
 --------------------------------------------------------------------------------
 -- Instances
@@ -564,7 +577,7 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       a' <- compJSExp' a
       pure (Typed t (JS.Cast t a'))
     goWithType Cond (c :* t :* f :* Nil) typ = do
-      Typed Bool c' <- compJSExp' c
+      c' <- compJSExp' c
       t' <- compJSExp' t
       f' <- compJSExp' f
-      pure (Typed (JS.typeOf t') (JS.Cond c' t' f'))
+      pure (c' .? t' $ f')

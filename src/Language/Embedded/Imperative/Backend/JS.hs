@@ -10,14 +10,14 @@ import Data.Proxy
 
 import Control.Monad.Operational.Higher
 import Language.JS.Expression
-import Language.Embedded.Imperative.CMD
+import Language.Embedded.Imperative.CMD as CMD
 import Language.Embedded.Imperative.Frontend.General
 import Language.JS.Monad
-import Language.JS.Syntax
+import Language.JS.Syntax as JS
 import Language.JS.CompExp
 
 -- | Compile `RefCMD`
-compRefCMD :: forall exp prog a a1. (CompJSExp exp, a ~ Ref a1, VarPred exp a1)
+compRefCMD :: forall exp prog a. CompJSExp exp
            => RefCMD exp prog a -> JSGen a
 compRefCMD cmd@NewRef = do
     t <- compTypePP2 (Proxy :: Proxy exp) cmd
@@ -25,28 +25,24 @@ compRefCMD cmd@NewRef = do
     if isPtrTy t
       then addLocal t r (Just jsNull)
       else addLocal t r Nothing
-    return (RefComp (idInteger r))
+    return (RefComp (unId r))
 compRefCMD (InitRef exp) = do
     t <- compType exp
     r <- freshId
     v <- compExp exp
     addLocal t r Nothing
     addStm (r := v)
-    return (RefComp (idInteger r))
-
-{-
-compRefCMD (GetRef ref) = do
-    (v,_) <- freshVar
-    e <- compExp v
-    touchVar ref
-    addStm [cstm| $e = $id:ref; |]
-    return v
-compRefCMD (SetRef ref exp) = do
-    v <- compExp exp
-    touchVar ref
-    addStm [cstm| $id:ref = $v; |]
-compRefCMD (UnsafeFreezeRef (RefComp v)) = return $ varExp v
--}
+    return (RefComp (unId r))
+compRefCMD cmd@(GetRef (RefComp ref)) = do
+    t <- compTypePP2 (Proxy :: Proxy exp) cmd
+    v <- declareNewVar t
+    addStm (v := Typed t (Id (MkId ref)))
+    return (varExp v)
+compRefCMD (SetRef (RefComp ref) exp) = do
+    ex <- compExp exp
+    addStm (MkId ref := ex)
+compRefCMD (UnsafeFreezeRef (RefComp v)) =
+    return (varExp (MkId v))
 
 {-
 -- | Compile `ArrCMD`
@@ -99,61 +95,61 @@ compArrCMD (UnsafeGetArr expi arr) = do
           addStm [cstm| $id:n = $id:arr[ $i ]; |]
           return v
         Just e -> return e
+-}
 
 -- | Compile `ControlCMD`
-compControlCMD :: CompExp exp => ControlCMD exp CGen a -> CGen a
-compControlCMD (If c t f) = do
+compControlCMD :: CompJSExp exp => ControlCMD exp JSGen a -> JSGen a
+compControlCMD (CMD.If c t f) = do
     cc <- compExp c
-    ct <- inNewBlock_ t
-    cf <- inNewBlock_ f
+    ct <- inBlock_ t
+    cf <- inBlock_ f
     case (ct, cf) of
-      ([],[]) -> return ()
-      (_ ,[]) -> addStm [cstm| if (   $cc) {$items:ct} |]
-      ([],_ ) -> addStm [cstm| if ( ! $cc) {$items:cf} |]
-      (_ ,_ ) -> addStm [cstm| if (   $cc) {$items:ct} else {$items:cf} |]
+      (Block [], Block []) -> return ()
+      (_       , Block []) -> addStm $ JS.If cc ct Nothing
+      (Block [], _)        -> addStm $ JS.If (mapTyped Not cc) cf Nothing
+      (_       , _)        -> addStm $ JS.If cc ct (Just cf)
 compControlCMD (While cont body) = do
     s <- get
     noop <- do
-        conte <- cont
-        contc <- compExp conte
-        case contc of
-          C.Var (C.Id "false"  _) _ -> return True
-          _ -> return False
+      conte <- cont
+      contc <- compExp conte
+      return (contc == jsFalse)
     put s
-    bodyc <- inNewBlock_ $ do
+    bodyc <- inBlock_ $ do
         conte <- cont
         contc <- compExp conte
-        case contc of
-          C.Var (C.Id "true"  _) _ -> return ()
-          _ -> case viewNotExp contc of
-              Just a -> addStm [cstm| if ($a) {break;} |]
-              _      -> addStm [cstm| if (! $contc) {break;} |]
+        case untyped contc of
+          JS.Lit 1 -> return ()
+          Not e    -> addStm $ JS.If e JS.Break Nothing
+          _        -> addStm $ JS.If (mapTyped Not contc) JS.Break Nothing
         body
-    when (not noop) $ addStm [cstm| while (1) {$items:bodyc} |]
-compControlCMD (For (lo,step,hi) body) = do
+    when (not noop) $ addStm (Forever bodyc)
+compControlCMD (CMD.For (lo,step,hi) body) = do
     loe   <- compExp lo
     hie   <- compExp $ borderVal hi
-    (i,n) <- freshVar
-    bodyc <- inNewBlock_ (body i)
+    (i,n) <- declareNew (typeOf loe)
+    (_, bodyc) <- inBlock (body (undefined i))
     let incl = borderIncl hi
-    let conte
-          | incl && (step>=0) = [cexp| $id:n<=$hie |]
-          | incl && (step<0)  = [cexp| $id:n>=$hie |]
-          | step >= 0         = [cexp| $id:n< $hie |]
-          | step < 0          = [cexp| $id:n> $hie |]
-    let stepe
-          | step == 1    = [cexp| $id:n++ |]
-          | step == (-1) = [cexp| $id:n-- |]
-          | step == 0    = [cexp| 0 |]
-          | step >  0    = [cexp| $id:n = $id:n + $step |]
-          | step <  0    = [cexp| $id:n = $id:n - $(negate step) |]
-    addStm [cstm| for ($id:n=$loe; $conte; $stepe) {$items:bodyc} |]
-compControlCMD Break = addStm [cstm| break; |]
-compControlCMD (Assert cond msg) = do
-    addInclude "<assert.h>"
+        step' = sameTypeAs loe (toJSExp step)
+        negStep' = sameTypeAs loe (toJSExp (negate step))
+        conte
+          | incl && (step>=0) = i .<= hie -- [cexp| $id:n<=$hie |]
+          | incl && (step<0)  = i .>= hie -- [cexp| $id:n>=$hie |]
+          | step >= 0         = i .<  hie -- [cexp| $id:n< $hie |]
+          | step < 0          = i .>  hie -- [cexp| $id:n> $hie |]
+        stepstm
+          | step == 1    = Inc (sameTypeAs loe n) -- [cexp| $id:n++ |]
+          | step == (-1) = Dec (sameTypeAs loe n) -- [cexp| $id:n-- |]
+          | step == 0    = n := loe -- [cexp| 0 |]
+          | step >  0    = n := (i + step') -- [cexp| $id:n = $id:n + $step |]
+          | step <  0    = n := (i + negStep') -- [cexp| $id:n = $id:n - $(negate step) |]
+    addStm $ JS.For (n := loe) conte stepstm bodyc -- [cstm| for ($id:n=$loe; $conte; $stepe) {$items:bodyc} |]
+compControlCMD CMD.Break = addStm JS.Break
+compControlCMD (CMD.Assert cond msg) = do
     c <- compExp cond
-    addStm [cstm| assert($c && $msg); |]
+    addStm $ JS.Assert c msg -- [cstm| assert($c && $msg); |]
 
+{-
 compIOMode :: IOMode -> String
 compIOMode ReadMode      = "r"
 compIOMode WriteMode     = "w"
@@ -232,11 +228,21 @@ compCallCMD (CallFun fun as) = do
 compCallCMD (CallProc fun as) = do
     as' <- mapM mkArg as
     addStm [cstm| $id:fun($args:as'); |]
+-}
 
-instance CompExp exp => Interp (RefCMD exp)     CGen where interp = compRefCMD
-instance CompExp exp => Interp (ControlCMD exp) CGen where interp = compControlCMD
-instance CompExp exp => Interp (FileCMD exp)    CGen where interp = compFileCMD
-instance CompExp exp => Interp (ObjectCMD exp)  CGen where interp = compObjectCMD
-instance CompExp exp => Interp (CallCMD exp)    CGen where interp = compCallCMD
-instance (CompExp exp, CompArrIx exp, EvalExp exp) => Interp (ArrCMD exp) CGen where interp = compArrCMD
+instance CompJSExp exp => Interp (RefCMD exp) JSGen where
+  interp = compRefCMD
+instance CompJSExp exp => Interp (ControlCMD exp) JSGen where
+  interp = compControlCMD
+
+{-
+instance CompJSExp exp => Interp (FileCMD exp) JSGen where
+  interp = compFileCMD
+instance CompJSExp exp => Interp (ObjectCMD exp) JSGen where
+  interp = compObjectCMD
+instance CompJSExp exp => Interp (CallCMD exp) JSGen where
+  interp = compCallCMD
+instance (CompJSExp exp, CompArrIx exp, EvalExp exp) =>
+         Interp (ArrCMD exp) JSGen where
+  interp = compArrCMD
 -}
