@@ -26,6 +26,9 @@ instance ToJSExp Word32  where toJSExp = Lit . fromIntegral
 instance ToJSExp Double  where toJSExp = Lit
 instance ToJSExp Int     where toJSExp = Lit . fromIntegral
 instance ToJSExp Integer where toJSExp = Lit . fromInteger
+instance ToJSExp Word    where toJSExp = Lit . fromIntegral
+
+{-# WARNING Type "TODO: Unsigned is not a valid argument type!" #-}
 
 -- | Type of a JavaScript expression.
 data Type

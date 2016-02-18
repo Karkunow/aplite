@@ -4,6 +4,8 @@ import Control.Monad.Reader
 import Control.Monad
 import Data.List
 
+{-# WARNING CodeStyle "TODO: ~~ for double -> signed conversion in ASM.js" #-}
+
 data CodeStyle
   = ASMJS
   | JavaScript
@@ -39,16 +41,31 @@ printJS :: PrintJS a => CodeTuning -> a -> String
 printJS cfg = concat . flip runReader cfg . fromJS
 
 class PrintJS a where
+  needsParen :: a -> Reader CodeTuning Bool
+  needsParen _ = pure True
+  
   fromJS :: a -> Printer
 
 instance PrintJS Id where
   fromJS (MkId n) = pure ['v' : show n]
 
 instance PrintJS a => PrintJS (Typed a) where
+  needsParen (Typed _ x) = do
+    codeStyle <$> ask >>= \cs -> case cs of
+      ASMJS -> pure True
+      _     -> needsParen x
+
   fromJS (Typed t x) = do
       codeStyle <$> ask >>= \cs -> case cs of
-        ASMJS      -> typed t (paren (fromJS x))
+        ASMJS      -> typed t (parenIfNecessary x)
         JavaScript -> fromJS x
+
+parenIfNecessary :: PrintJS a => a -> Printer
+parenIfNecessary x = do
+  useParens <- needsParen x
+  if useParens
+    then paren (fromJS x)
+    else fromJS x
 
 instance PrintJS Decl where
   fromJS (Decl t n mx) = do
@@ -64,14 +81,18 @@ instance PrintJS BinOp where
   fromJS op = str (show op)
 
 instance PrintJS Exp where
+  needsParen (Id _)  = pure False
+  needsParen (Lit _) = pure False
+  needsParen _       = pure True
+
   fromJS (Id n)       = fromJS n
-  fromJS (Op op a b)  = fromJS a .+. fromJS op .+. fromJS b
+  fromJS (Op op a b)  = parenIfNecessary a .+. fromJS op .+. parenIfNecessary b
   fromJS (Lit x)
     | isIntegral x    = str (show (truncate x))
     | otherwise       = str (show x)
   fromJS (Neg x)      = str "-" .+. fromJS x
   fromJS (Not x)      = str "!" .+. fromJS x
-  -- coercion performed by mandatory type annotation anyway
+  -- TODO: ~~ for conversion double -> signed!
   fromJS (Cast _ x)   = fromJS x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
 
@@ -139,9 +160,9 @@ str s = pure [s]
 infixr 7 .+.
 
 typed :: Type -> Printer -> Printer
-typed Double m   = paren $ m >>= \x -> pure ("+":x)
-typed Signed m   = paren $ m >>= \x -> pure (x ++ ["|0"])
-typed Unsigned m = paren $ m >>= \x -> pure (x ++ [">>>0"])
+typed Double m   = m >>= \x -> pure ("+":x)
+typed Signed m   = m >>= \x -> pure (x ++ ["|0"])
+typed Unsigned m = m >>= \x -> pure (x ++ [">>>0"])
 
 paren :: Printer -> Printer
 paren m = m >>= \x -> pure $ ["("] ++ x ++ [")"]

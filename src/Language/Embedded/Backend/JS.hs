@@ -7,7 +7,7 @@ import Language.JS.Print
 import Language.JS.Expression 
 import Language.JS.CompExp
 
-
+import Data.Bits
 import Language.JS.Syntax
 import Language.Embedded.Imperative
 
@@ -25,5 +25,8 @@ asm = defaultTuning {codeStyle = ASMJS}
 prog :: Program CMD ()
 prog = do
   done <- initRef false
+  sum <- initRef (0 :: CExp Int32)
   while (not_ <$> getRef done) $ do
     setRef done true
+    x <- getRef sum
+    setRef sum (x+x+x+x+x `xor` x)
