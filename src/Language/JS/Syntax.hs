@@ -28,8 +28,6 @@ instance ToJSExp Int     where toJSExp = Lit . fromIntegral
 instance ToJSExp Integer where toJSExp = Lit . fromInteger
 instance ToJSExp Word    where toJSExp = Lit . fromIntegral
 
-{-# WARNING Type "TODO: Unsigned is not a valid argument type!" #-}
-
 -- | Type of a JavaScript expression.
 data Type
   = Signed
@@ -43,8 +41,10 @@ isPtrTy (Arr _) = True
 isPtrTy _       = False
 
 -- | A JavaScript identifier.
-newtype Id = MkId {unId :: Integer}
-  deriving (Show, Eq, Enum)
+data Id
+  = MkId {unId :: Integer}
+  | External {unExternal :: String}
+    deriving (Show, Eq)
 
 -- | An untyped JavaScript expression with typed subexpressions.
 data Exp

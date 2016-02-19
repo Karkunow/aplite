@@ -11,18 +11,18 @@ data JSEnv = JSEnv
   , jsArgs       :: [Typed Exp]
   , jsStmts      :: [Stmt]
   , jsFinalStmts :: [Stmt]
-  , jsNextId     :: Id
+  , jsNextId     :: Integer
   }
 
-emptyEnv :: JSEnv
-emptyEnv = JSEnv
+emptyEnv :: Integer -> JSEnv
+emptyEnv startid = JSEnv
   { jsLocals = []
   , jsGlobals = []
   , jsParams = []
   , jsArgs = []
   , jsStmts = []
   , jsFinalStmts = []
-  , jsNextId = MkId 0
+  , jsNextId = startid
   }
 
 type JSGen = State JSEnv
@@ -47,7 +47,7 @@ freshId = do
   case jsNextId env of
     ident -> do
       put env {jsNextId = succ ident}
-      return ident
+      return (MkId ident)
 
 genIdFor :: String -> JSGen Id
 genIdFor = pure . MkId . read
@@ -88,18 +88,25 @@ addArg arg = modify $ \env -> env {jsArgs = arg : jsArgs env}
 addParam :: Typed Id -> JSGen ()
 addParam p = modify $ \env -> env {jsParams = p : jsParams env}
 
-runJSGen :: JSGen a -> (Func, a)
-runJSGen m =
-    case runState m emptyEnv of
-      (x, env) -> (mkFunc env, x)
+runJSGen :: ReturnValue a => Integer -> JSGen a -> Func
+runJSGen startid m =
+    case runState m (emptyEnv startid) of
+      (x, env) -> mkFunc env x
   where
-    mkFunc env = Func
-      { funParams = jsParams env
-      , funLocals = jsLocals env
-      , funBody   = reverse (jsStmts env) ++ reverse (jsFinalStmts env)
+    ret = maybe [] (:[]) . returnStmt
+    mkFunc env x = Func
+      { funParams = reverse $ jsParams env
+      , funLocals = reverse $ jsLocals env
+      , funBody   = reverse (ret x ++ jsFinalStmts env ++ jsStmts env)
       }
 
-runJSGen_ :: JSGen a -> Func
-runJSGen_ = fst . runJSGen
+evalJSGen :: Integer -> JSGen a -> a
+evalJSGen startid m = evalState m (emptyEnv 0)
+
+class ReturnValue a where
+  returnStmt :: a -> Maybe Stmt
+
+instance ReturnValue () where
+  returnStmt _ = Nothing
 
 -- TODO: inModule, inNewBlock, inNewFunction, wrapMain, collectArgs, collectDefinitions?, liftSharedLocals?

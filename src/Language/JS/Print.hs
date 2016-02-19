@@ -30,33 +30,40 @@ defaultTuning = CodeTuning
   , useHeap    = False
   }
 
-type Printer = Reader CodeTuning [String]
+data PrintEnv = PrintEnv
+  { indent :: String
+  , tuning :: CodeTuning
+  }
 
-whenCfg :: (CodeTuning -> Bool) -> Reader CodeTuning () -> Reader CodeTuning ()
-whenCfg p m = do
-  env <- ask
-  when (p env) m
+type PrintM = Reader PrintEnv
+type Printer = PrintM [String]
 
 printJS :: PrintJS a => CodeTuning -> a -> String
-printJS cfg = concat . flip runReader cfg . fromJS
+printJS t = concat . flip runReader (mkEnv t) . fromJS
+  where
+    mkEnv t = PrintEnv
+      { indent = ""
+      , tuning = t
+      }
 
 class PrintJS a where
-  needsParen :: a -> Reader CodeTuning Bool
+  needsParen :: a -> PrintM Bool
   needsParen _ = pure True
   
   fromJS :: a -> Printer
 
 instance PrintJS Id where
-  fromJS (MkId n) = pure ['v' : show n]
+  fromJS (MkId n)     = pure ['v' : show n]
+  fromJS (External n) = pure [show n]
 
 instance PrintJS a => PrintJS (Typed a) where
   needsParen (Typed _ x) = do
-    codeStyle <$> ask >>= \cs -> case cs of
+    codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS -> pure True
       _     -> needsParen x
 
   fromJS (Typed t x) = do
-      codeStyle <$> ask >>= \cs -> case cs of
+      codeStyle . tuning <$> ask >>= \cs -> case cs of
         ASMJS      -> typed t (parenIfNecessary x)
         JavaScript -> fromJS x
 
@@ -69,7 +76,7 @@ parenIfNecessary x = do
 
 instance PrintJS Decl where
   fromJS (Decl t n mx) = do
-      codeStyle <$> ask >>= \cs -> case cs of
+      codeStyle . tuning <$> ask >>= \cs -> case cs of
         ASMJS      -> str "var " .+. fromJS n .+. asmInit
         JavaScript -> str "var " .+. fromJS n .+. jsInit
     where
@@ -105,13 +112,13 @@ instance PrintJS Stmt where
   fromJS (DeclStm d) =
     fromJS d
   fromJS (Inc x) = do
-    codeStyle <$> ask >>= \cs -> case cs of
+    codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS ->
         typed (typeOf x) $ fromJS x .+. str "=" .+. fromJS x .+. str "+1"
       JavaScript ->
         str "++" .+. fromJS x
   fromJS (Dec x) = do
-    codeStyle <$> ask >>= \cs -> case cs of
+    codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS ->
         typed (typeOf x) $ fromJS x .+. str "=" .+. fromJS x .+. str "-1"
       JavaScript ->
@@ -119,8 +126,11 @@ instance PrintJS Stmt where
   fromJS (Ret x) =
     str "return " .+. fromJS x
   fromJS (Block ss) = do
-    ss' <- mapM fromJS ss
-    str "{" .+. str (concat $ intercalate [";"] ss') .+. str ";}"
+    ind <- indent <$> ask
+    let ind' = "  " ++ ind
+    ss' <- local (\env -> env {indent = ind'}) $ mapM fromJS ss
+    pure ["{\n", ind'] .+. pure (intercalate [";\n", ind'] ss')
+                      .+. pure [";\n", ind, "}"]
   fromJS (If e a mb) = do
     ifPart <- str "if(" .+. fromJS e .+. str ")" .+. fromJS a
     case mb of
@@ -142,7 +152,7 @@ instance PrintJS Stmt where
 -- TODO: wrap this in proper ASM.js module when appropriate
 instance PrintJS Func where
   fromJS (Func params locals body) = do
-    cfg <- ask
+    cfg <- tuning <$> ask
     params' <- concat . intercalate [","] <$> mapM (fromJS . untyped) params
     let argdecls = case codeStyle cfg of
           ASMJS      -> [n := Typed t (Lit 0) | Typed t n <- params]

@@ -209,25 +209,6 @@ compObjectCMD (InitObject fun pnt t args) = do
     addLocal [cdecl| $ty:t' * $id:sym; |]
     addStm   [cstm|  $id:sym = $id:fun($args:as); |]
     return $ Object pnt t sym
-
-compCallCMD :: CompExp exp => CallCMD exp CGen a -> CGen a
-compCallCMD (AddInclude inc)    = addInclude inc
-compCallCMD (AddDefinition def) = addGlobal def
-compCallCMD (AddExternFun fun res args) = do
-    tres  <- compTypeP res
-    targs <- mapM mkParam args
-    addGlobal [cedecl| extern $ty:tres $id:fun($params:targs); |]
-compCallCMD (AddExternProc proc args) = do
-    targs <- mapM mkParam args
-    addGlobal [cedecl| extern void $id:proc($params:targs); |]
-compCallCMD (CallFun fun as) = do
-    as'   <- mapM mkArg as
-    (v,n) <- freshVar
-    addStm [cstm| $id:n = $id:fun($args:as'); |]
-    return v
-compCallCMD (CallProc fun as) = do
-    as' <- mapM mkArg as
-    addStm [cstm| $id:fun($args:as'); |]
 -}
 
 instance CompJSExp exp => Interp (RefCMD exp) JSGen where
@@ -240,8 +221,6 @@ instance CompJSExp exp => Interp (FileCMD exp) JSGen where
   interp = compFileCMD
 instance CompJSExp exp => Interp (ObjectCMD exp) JSGen where
   interp = compObjectCMD
-instance CompJSExp exp => Interp (CallCMD exp) JSGen where
-  interp = compCallCMD
 instance (CompJSExp exp, CompArrIx exp, EvalExp exp) =>
          Interp (ArrCMD exp) JSGen where
   interp = compArrCMD

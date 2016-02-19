@@ -27,14 +27,14 @@ import qualified Language.JS.Syntax as JS
 -- | Types supported by JS
 class (Show a, Eq a, Typeable a, ToJSExp a) => JSType a
   where
-    jsType :: proxy a -> JSGen Type
+    jsType :: proxy a -> Type
 
-instance JSType Bool   where jsType _ = pure Signed
-instance JSType Int    where jsType _ = pure Signed
-instance JSType Int32  where jsType _ = pure Signed
-instance JSType Word   where jsType _ = pure Unsigned
-instance JSType Word32 where jsType _ = pure Unsigned
-instance JSType Double where jsType _ = pure Double
+instance JSType Bool   where jsType _ = Signed
+instance JSType Int    where jsType _ = Signed
+instance JSType Int32  where jsType _ = Signed
+instance JSType Word   where jsType _ = Unsigned
+instance JSType Word32 where jsType _ = Unsigned
+instance JSType Double where jsType _ = Double
 
 #if MIN_VERSION_syntactic(3,0,0)
 -- instance ShowClass JSType where showClass _ = "JSType"
@@ -234,7 +234,7 @@ instance CompJSExp CExp
     varExp   = CExp . Sym . T . Var . showVar
       where showVar (MkId v) = show v
     compExp  = compJSExp
-    compType = jsType
+    compType = pure . jsType
 
 -- | One-level constant folding: if all immediate sub-expressions are literals,
 -- the expression is reduced to a single literal
@@ -581,7 +581,7 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
        => Sym sig
        -> Args (AST T) sig
        -> JSGen (Typed Exp)
-    go a b = jsType (Proxy :: Proxy (DenResult sig)) >>= goWithType a b
+    go a b = goWithType a b $ jsType (Proxy :: Proxy (DenResult sig))
 
     goWithType :: forall sig. JSType (DenResult sig)
        => Sym sig
@@ -613,3 +613,6 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       t' <- compJSExp' t
       f' <- compJSExp' f
       pure (c' .? t' $ f')
+
+instance JSType a => ReturnValue (CExp a) where
+  returnStmt = Just . Ret . evalJSGen 0 . compJSExp

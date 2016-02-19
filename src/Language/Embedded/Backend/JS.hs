@@ -4,29 +4,22 @@ import Control.Monad.Operational.Higher
 import Language.Embedded.Imperative.Backend.JS
 import Language.JS.Monad
 import Language.JS.Print
-import Language.JS.Expression 
+import Language.JS.Expression hiding (Fun)
 import Language.JS.CompExp
+import Language.JS.Export
 
 import Data.Bits
 import Language.JS.Syntax
 import Language.Embedded.Imperative
 
--- TODO: this should be a config, specifying how to select tuning
-compile :: (Interp instr JSGen, HFunctor instr)
-        => CodeTuning -> Program instr a -> String
-compile cfg = printJS cfg . runJSGen_  . interpret
+compile :: (Instr a ~ instr, Interp instr JSGen, HFunctor instr, Export a)
+        => CodeTuning -> a -> String
+compile ct f =
+    printJS ct $ f' {funParams = params}
+  where
+    Fun startid params prog = mkFun 0 [] f
+    f' = generate startid prog
 
-type CMD = RefCMD CExp :+: ControlCMD CExp
-
-def = defaultTuning
-asm = defaultTuning {codeStyle = ASMJS}
-
--- TODO: hur skapa funktioner?
-prog :: Program CMD ()
-prog = do
-  done <- initRef false
-  sum <- initRef (0 :: CExp Int32)
-  while (not_ <$> getRef done) $ do
-    setRef done true
-    x <- getRef sum
-    setRef sum (x+x+x+x+x `xor` x)
+generate :: (ReturnValue a, Interp instr JSGen, HFunctor instr)
+        => Integer -> Program instr a -> Func
+generate startid = runJSGen startid . interpret
