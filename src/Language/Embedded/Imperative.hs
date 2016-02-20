@@ -39,7 +39,7 @@ module Language.Embedded.Imperative
     -- * Interpreting expressions
   , VarPred
   , EvalExp
-  , CompExp
+  , CompJSExp
     -- * Front end
   , module Language.Embedded.Imperative.Frontend.General
   , module Language.Embedded.Imperative.Frontend
@@ -58,4 +58,5 @@ import Language.Embedded.Imperative.CMD
 import Language.Embedded.Imperative.Frontend.General
 import Language.Embedded.Imperative.Frontend
 import Language.Embedded.Imperative.Backend.JS ()
+import Language.JS.CompExp
 

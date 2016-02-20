@@ -15,9 +15,8 @@ import qualified Control.Monad.State.Lazy as L
 import Control.Monad.State.Strict
 import Control.Monad.Writer
 
-import Language.Embedded.Expression
-
-
+import Language.JS.CompExp
+import Language.JS.Syntax
 
 newtype SupplyT m a = SupplyT { unSupplyT :: StateT VarId m a }
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans)

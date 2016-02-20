@@ -1,4 +1,3 @@
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE PolyKinds   #-}
 
 -- | Various types of function arguments
@@ -7,12 +6,10 @@ module Language.Embedded.Imperative.Args where
 
 import Control.Monad
 import Data.Proxy
-import Language.C.Quote.C
-import Language.C.Syntax hiding (Deref)
 import Language.Embedded.Expression
 import Language.Embedded.Imperative.CMD
-import Language.Embedded.Backend.C
 
+{-
 -- | Value argument
 data ValArg exp where
   ValArg :: VarPred exp a => exp a -> ValArg exp
@@ -130,3 +127,4 @@ instance Arg arg => Arg (Deref arg) where
   mapArg  predCast f (Deref arg) = Deref (mapArg predCast f arg)
   mapMArg predCast f (Deref arg) = liftM Deref (mapMArg predCast f arg)
 
+-}

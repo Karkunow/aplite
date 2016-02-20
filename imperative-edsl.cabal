@@ -35,26 +35,17 @@ Flag old-syntactic
 library
   exposed-modules:
     Control.Monads
-    System.IO.Fake
-    Language.C.Monad
-    Language.Embedded.Expression
+    -- System.IO.Fake
     Language.Embedded.Traversal
     Language.Embedded.Imperative.Args
     Language.Embedded.Imperative.CMD
     Language.Embedded.Imperative.Frontend.General
     Language.Embedded.Imperative.Frontend
     Language.Embedded.Imperative
-    Language.Embedded.Concurrent.CMD
-    Language.Embedded.Concurrent
-    Language.Embedded.Signature
-    Language.Embedded.Backend.C
     Language.Embedded.Backend.JS
-    Language.Embedded.CExp
 
   other-modules:
-    Language.Embedded.Imperative.Backend.C
     Language.Embedded.Imperative.Backend.JS
-    Language.Embedded.Concurrent.Backend.C
     Language.JS.Monad
     Language.JS.Print
     Language.JS.Expression
@@ -87,7 +78,6 @@ library
 
   other-extensions:
     PolyKinds
-    QuasiQuotes
     UndecidableInstances
 
   build-depends:
@@ -96,19 +86,11 @@ library
     constraints,
     containers,
     deepseq,
-    directory,
     exception-transformers,
-    language-c-quote >= 0.11 && < 0.12,
-    mainland-pretty >= 0.4 && < 0.5,
-    microlens >= 0.3.0.0,
-    microlens-mtl,
-    microlens-th,
     mtl,
-    process,
     operational-alacarte,
     tagged,
       -- tagged needed for GHC 7.6
-    BoundedChan,
     srcloc,
     time >= 1.5.0.1
 
@@ -137,4 +119,3 @@ test-suite Tests
     syntactic,
     tasty-quickcheck,
     tasty-th
-

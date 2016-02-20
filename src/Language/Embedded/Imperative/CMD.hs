@@ -65,17 +65,20 @@ import Data.Proxy
 
 import Control.Monad.Operational.Higher
 
-import Control.Monads
 import Language.Embedded.Expression
 import Language.Embedded.Traversal
-import qualified Language.C.Syntax as C
-import Language.C.Quote.C (ToIdent (..))
-import Language.C.Monad
+import Language.JS.Monad
+import Language.JS.CompExp
+import Language.JS.Syntax (ToIdent (..), VarId)
+import qualified Language.JS.Syntax as JS
 
 
 --------------------------------------------------------------------------------
 -- * References
 --------------------------------------------------------------------------------
+
+fresh = undefined
+freshStr = undefined
 
 -- | Mutable reference
 data Ref a
@@ -85,7 +88,7 @@ data Ref a
 
 instance ToIdent (Ref a)
   where
-    toIdent (RefComp r) = C.Id ('v' : show r)
+    toIdent (RefComp r) = JS.External ('v' : show r)
 
 -- | Commands for mutable references
 data RefCMD exp (prog :: * -> *) a
@@ -112,13 +115,13 @@ instance HFunctor (RefCMD exp)
     hfmap _ (SetRef r a) = SetRef r a
     hfmap _ (UnsafeFreezeRef r) = UnsafeFreezeRef r
 
-instance CompExp exp => DryInterp (RefCMD exp)
+instance CompJSExp exp => DryInterp (RefCMD exp)
   where
     dryInterp NewRef       = liftM RefComp fresh
     dryInterp (InitRef _)  = liftM RefComp fresh
     dryInterp (GetRef _)   = liftM varExp fresh
     dryInterp (SetRef _ _) = return ()
-    dryInterp (UnsafeFreezeRef (RefComp v)) = return $ varExp v
+    dryInterp (UnsafeFreezeRef (RefComp v)) = return $ varExp (JS.MkId v)
 
 type instance IExp (RefCMD e)       = e
 type instance IExp (RefCMD e :+: i) = e
@@ -161,11 +164,11 @@ data IArr i a
 
 instance ToIdent (Arr i a)
   where
-    toIdent (ArrComp arr) = C.Id arr
+    toIdent (ArrComp arr) = JS.External arr
 
 instance ToIdent (IArr i a)
   where
-    toIdent (IArrComp arr) = C.Id arr
+    toIdent (IArrComp arr) = JS.External arr
 
 -- | Commands for mutable arrays
 data ArrCMD exp (prog :: * -> *) a
@@ -191,7 +194,7 @@ instance HFunctor (ArrCMD exp)
     hfmap _ (CopyArr a1 a2 l)     = CopyArr a1 a2 l
     hfmap _ (UnsafeFreezeArr arr) = UnsafeFreezeArr arr
 
-instance CompExp exp => DryInterp (ArrCMD exp)
+instance CompJSExp exp => DryInterp (ArrCMD exp)
   where
     dryInterp (NewArr _)      = liftM ArrComp $ freshStr "a"
     dryInterp (InitArr _)     = liftM ArrComp $ freshStr "a"
@@ -314,7 +317,7 @@ data Handle
 
 instance ToIdent Handle
   where
-    toIdent (HandleComp h) = C.Id h
+    toIdent (HandleComp h) = JS.External h
 
 -- | Handle to stdin
 stdin :: Handle
@@ -361,7 +364,7 @@ instance HFunctor (FileCMD exp)
     hfmap _ (FGet hdl)            = FGet hdl
     hfmap _ (FEof hdl)            = FEof hdl
 
-instance CompExp exp => DryInterp (FileCMD exp)
+instance CompJSExp exp => DryInterp (FileCMD exp)
   where
     dryInterp (FOpen _ _)     = liftM HandleComp $ freshStr "h"
     dryInterp (FClose _)      = return ()
@@ -384,7 +387,7 @@ newtype Ptr a = PtrComp {ptrId :: String}
 
 instance ToIdent (Ptr a)
   where
-    toIdent = C.Id . ptrId
+    toIdent = JS.External . ptrId
 
 -- | Abstract object
 data Object = Object
@@ -396,7 +399,7 @@ data Object = Object
 
 instance ToIdent Object
   where
-    toIdent (Object _ _ o) = C.Id o
+    toIdent (Object _ _ o) = JS.External o
 
 data FunArg exp where
   FunArg :: Arg arg => arg exp -> FunArg exp
@@ -406,8 +409,8 @@ type VarPredCast exp1 exp2 = forall a b .
     VarPred exp1 a => Proxy a -> (VarPred exp2 a => b) -> b
 
 class Arg arg where
-  mkArg   :: CompExp exp => arg exp -> CGen C.Exp
-  mkParam :: CompExp exp => arg exp -> CGen C.Param
+  mkArg   :: CompJSExp exp => arg exp -> JSGen JS.Exp
+  mkParam :: CompJSExp exp => arg exp -> JSGen JS.Param
 
   -- | Map over the expression(s) in an argument
   mapArg  :: VarPredCast exp1 exp2
@@ -445,7 +448,7 @@ data C_CMD exp (prog :: * -> *) a
         -> Bool    -- Pointed?
         -> C_CMD exp prog Object
     AddInclude    :: String       -> C_CMD exp prog ()
-    AddDefinition :: C.Definition -> C_CMD exp prog ()
+--    AddDefinition :: C.Definition -> C_CMD exp prog ()
     AddExternFun  :: VarPred exp res
                   => String
                   -> proxy (exp res)
@@ -461,19 +464,19 @@ instance HFunctor (C_CMD exp)
     hfmap _ (PtrToArr p)                = PtrToArr p
     hfmap _ (NewObject p t)             = NewObject p t
     hfmap _ (AddInclude incl)           = AddInclude incl
-    hfmap _ (AddDefinition def)         = AddDefinition def
+--    hfmap _ (AddDefinition def)         = AddDefinition def
     hfmap _ (AddExternFun fun res args) = AddExternFun fun res args
     hfmap _ (AddExternProc proc args)   = AddExternProc proc args
     hfmap _ (CallFun fun args)          = CallFun fun args
     hfmap _ (CallProc obj proc args)    = CallProc obj proc args
 
-instance CompExp exp => DryInterp (C_CMD exp)
+instance CompJSExp exp => DryInterp (C_CMD exp)
   where
     dryInterp NewPtr                 = liftM PtrComp $ freshStr "p"
     dryInterp (PtrToArr (PtrComp p)) = return $ ArrComp p
     dryInterp (NewObject t p)        = liftM (Object p t) $ freshStr "obj"
     dryInterp (AddInclude _)         = return ()
-    dryInterp (AddDefinition _)      = return ()
+--    dryInterp (AddDefinition _)      = return ()
     dryInterp (AddExternFun _ _ _)   = return ()
     dryInterp (AddExternProc _ _)    = return ()
     dryInterp (CallFun _ _)          = liftM varExp fresh
@@ -607,7 +610,7 @@ runC_CMD NewPtr               = error "cannot run programs involving newPtr"
 runC_CMD (PtrToArr p)         = error "cannot run programs involving ptrToArr"
 runC_CMD (NewObject _ _)      = error "cannot run programs involving newObject"
 runC_CMD (AddInclude _)       = return ()
-runC_CMD (AddDefinition _)    = return ()
+-- runC_CMD (AddDefinition _)    = return ()
 runC_CMD (AddExternFun _ _ _) = return ()
 runC_CMD (AddExternProc _ _)  = return ()
 runC_CMD (CallFun _ _)        = error "cannot run programs involving callFun"

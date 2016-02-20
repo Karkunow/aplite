@@ -3,9 +3,10 @@
 --   regular JS.
 module Language.JS.Syntax
   ( module Language.JS.BinOps
-  , ToJSExp (..)
+  , ToJSExp (..), ToIdent (..)
   , Type (..), isPtrTy
-  , Func (..), Id (..), Decl (..) , Param , Typed (..), Exp (..), Stmt (..)
+  , Func (..), Id (..), Decl (..), Param, Typed (..), VarId
+  , Exp (..), Stmt (..)
   , jsNull, jsTrue, jsFalse
   , (.>), (.>=), (.<), (.<=), (.==), (./=), (.?)
   , sameTypeAs, mapTyped
@@ -40,9 +41,14 @@ isPtrTy :: Type -> Bool
 isPtrTy (Arr _) = True
 isPtrTy _       = False
 
+class ToIdent a where
+  toIdent :: a -> Id
+
+type VarId = Integer
+
 -- | A JavaScript identifier.
 data Id
-  = MkId {unId :: Integer}
+  = MkId {unId :: VarId}
   | External {unExternal :: String}
     deriving (Show, Eq)
 

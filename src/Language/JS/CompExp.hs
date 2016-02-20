@@ -1,3 +1,4 @@
+
 {-# LANGUAGE TypeFamilies #-}
 module Language.JS.CompExp
   ( VarPred, EvalExp (..)

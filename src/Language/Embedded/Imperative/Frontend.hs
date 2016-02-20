@@ -1,5 +1,4 @@
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- Front end for imperative instructions
@@ -22,14 +21,14 @@ import System.IO.Unsafe
 import Data.Proxy
 #endif
 
-import Language.C.Quote.C
-
 import Control.Monad.Operational.Higher
-import System.IO.Fake
+-- import System.IO.Fake
 import Language.Embedded.Expression
 import Language.Embedded.Imperative.CMD
 import Language.Embedded.Imperative.Frontend.General
-import Language.Embedded.Imperative.Args
+import Language.JS.CompExp
+import qualified Language.JS.Syntax as JS
+-- import Language.Embedded.Imperative.Args
 
 
 
@@ -76,10 +75,10 @@ unsafeFreezeRef = singleE . UnsafeFreezeRef
 -- can give strange results when evaluating in 'IO', as explained here:
 --
 -- <http://fun-discoveries.blogspot.se/2015/09/strictness-can-fix-non-termination.html>
-veryUnsafeFreezeRef :: (VarPred exp a, EvalExp exp, CompExp exp) =>
+veryUnsafeFreezeRef :: (VarPred exp a, EvalExp exp, CompJSExp exp) =>
     Ref a -> exp a
 veryUnsafeFreezeRef (RefEval r) = litExp $! unsafePerformIO $! readIORef r
-veryUnsafeFreezeRef (RefComp v) = varExp v
+veryUnsafeFreezeRef (RefComp v) = varExp (JS.MkId v)
 
 
 
@@ -259,7 +258,7 @@ unsafeSwap a b = singleInj $ SwapPtr a b
 --------------------------------------------------------------------------------
 -- * File handling
 --------------------------------------------------------------------------------
-
+{-
 -- | Open a file
 fopen :: (FileCMD (IExp instr) :<: instr) => FilePath -> IOMode -> ProgramT instr m Handle
 fopen file = singleE . FOpen file
@@ -316,7 +315,6 @@ fget = singleE . FGet
 -- | Print to @stdout@. Accepts a variable number of arguments.
 printf :: PrintfType r => String -> r
 printf = fprintf stdout
-
 
 
 --------------------------------------------------------------------------------
@@ -480,6 +478,7 @@ addr = FunArg . Addr
 -- | Modifier that dereferences another argument
 deref :: FunArg exp -> FunArg exp
 deref = FunArg . Deref
+-}
 
 
 
@@ -493,10 +492,11 @@ deref = FunArg . Deref
 runIO :: (Interp instr IO, HFunctor instr) => Program instr a -> IO a
 runIO = interpret
 
+{-
 -- | Like 'runIO' but with explicit input/output connected to @stdin@/@stdout@
 captureIO :: (Interp instr IO, HFunctor instr)
     => Program instr a  -- ^ Program to run
     -> String           -- ^ Input to send to @stdin@
     -> IO String        -- ^ Result from @stdout@
 captureIO = fakeIO . runIO
-
+-}

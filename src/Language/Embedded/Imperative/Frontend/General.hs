@@ -20,8 +20,7 @@ module Language.Embedded.Imperative.Frontend.General
   , Object
   , FunArg (..)
   , Assignable
-  , Definition
-  , cedecl
+--  , Definition
   ) where
   -- Note: Important not to export the constructors of `Ref`, `Arr` or `Handle`,
   -- since the user is not supposed to inspect such values.
@@ -29,7 +28,3 @@ module Language.Embedded.Imperative.Frontend.General
 import qualified System.IO as IO
 
 import Language.Embedded.Imperative.CMD
-
-import Language.C.Syntax
-import Language.C.Quote.C
-

@@ -1,8 +1,6 @@
 module Language.JS.Monad where
 import Control.Monad.State
 import Language.JS.Syntax
-import Language.C.Monad (MonadInclude (..))
-import qualified Language.C.Syntax as C
 
 data JSEnv = JSEnv
   { jsLocals     :: [Decl]
@@ -26,9 +24,6 @@ emptyEnv startid = JSEnv
   }
 
 type JSGen = State JSEnv
-
-instance MonadInclude JSGen where
-  addInclude _ = return ()
 
 addStm :: Stmt -> JSGen ()
 addStm s = modify $ \env -> env {jsStmts = s : jsStmts env}
