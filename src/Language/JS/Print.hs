@@ -158,8 +158,9 @@ instance PrintJS Func where
           ASMJS      -> [n := Typed t (Lit 0) | Typed t n <- params]
           JavaScript -> []
     foldr (.+.) (pure [])
-      [ str "function(", str params', str ")"
+      [ str "(function(", str params', str ")"
       , fromJS (Block (argdecls ++ map DeclStm locals ++ body))
+      , str ")"
       ]
 
 str :: String -> Printer

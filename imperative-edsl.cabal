@@ -35,6 +35,7 @@ Flag old-syntactic
 library
   exposed-modules:
     Control.Monads
+    Haste.Aplite
     -- System.IO.Fake
     Language.Embedded.Traversal
     Language.Embedded.Imperative.Args

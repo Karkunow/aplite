@@ -7,13 +7,13 @@ import Language.JS.Print
 import Language.JS.Expression hiding (Fun)
 import Language.JS.CompExp
 import Language.JS.Export
+import Data.Proxy
 
 import Data.Bits
 import Language.JS.Syntax
 import Language.Embedded.Imperative
 
-compile :: (Instr a ~ instr, Interp instr JSGen, HFunctor instr, Export a)
-        => CodeTuning -> a -> String
+compile :: Export a => CodeTuning -> a -> String
 compile ct f =
     printJS ct $ f' {funParams = params}
   where
