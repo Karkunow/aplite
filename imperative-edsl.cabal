@@ -102,6 +102,9 @@ library
       open-typerep >= 0.4,
       syntactic >= 3.2
 
+  ghc-options:
+    -Wall
+
   hs-source-dirs: src
 
 test-suite Tests
