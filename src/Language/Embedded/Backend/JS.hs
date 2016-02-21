@@ -8,12 +8,13 @@ import Language.JS.Expression hiding (Fun)
 import Language.JS.CompExp
 import Language.JS.Export
 import Data.Proxy
+import Haste (JSString)
 
 import Data.Bits
 import Language.JS.Syntax
 import Language.Embedded.Imperative
 
-compile :: Export a => CodeTuning -> a -> String
+compile :: Export a => CodeTuning -> a -> JSString
 compile ct f =
     printJS ct $ f' {funParams = params}
   where

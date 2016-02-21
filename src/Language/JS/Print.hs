@@ -1,8 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Language.JS.Print where
 import Language.JS.Syntax
 import Control.Monad.Reader
 import Control.Monad
 import Data.List
+import qualified Haste.JSString as S
+import Haste (JSString, toJSString)
 
 {-# WARNING CodeStyle "TODO: ~~ for double -> signed conversion in ASM.js" #-}
 
@@ -31,15 +34,15 @@ defaultTuning = CodeTuning
   }
 
 data PrintEnv = PrintEnv
-  { indent :: String
+  { indent :: JSString
   , tuning :: CodeTuning
   }
 
 type PrintM = Reader PrintEnv
-type Printer = PrintM [String]
+type Printer = PrintM [JSString]
 
-printJS :: PrintJS a => CodeTuning -> a -> String
-printJS t = concat . flip runReader (mkEnv t) . fromJS
+printJS :: PrintJS a => CodeTuning -> a -> JSString
+printJS t = S.concat . flip runReader (mkEnv t) . fromJS
   where
     mkEnv t = PrintEnv
       { indent = ""
@@ -53,8 +56,8 @@ class PrintJS a where
   fromJS :: a -> Printer
 
 instance PrintJS Id where
-  fromJS (MkId n)     = pure ['v' : show n]
-  fromJS (External n) = pure [show n]
+  fromJS (MkId n)     = pure ["v", toJSString n]
+  fromJS (External n) = pure [toJSString n]
 
 instance PrintJS a => PrintJS (Typed a) where
   needsParen (Typed _ x) = do
@@ -85,7 +88,7 @@ instance PrintJS Decl where
       jsInit = maybe (pure []) (\x -> str "=" .+. fromJS x) mx
 
 instance PrintJS BinOp where
-  fromJS op = str (show op)
+  fromJS op = str (toJSString op)
 
 instance PrintJS Exp where
   needsParen (Id _)  = pure False
@@ -95,8 +98,8 @@ instance PrintJS Exp where
   fromJS (Id n)       = fromJS n
   fromJS (Op op a b)  = parenIfNecessary a .+. fromJS op .+. parenIfNecessary b
   fromJS (Lit x)
-    | isIntegral x    = str (show (truncate x))
-    | otherwise       = str (show x)
+    | isIntegral x    = str (toJSString (truncate x :: Int))
+    | otherwise       = str (toJSString x)
   fromJS (Neg x)      = str "-" .+. fromJS x
   fromJS (Not x)      = str "!" .+. fromJS x
   -- TODO: ~~ for conversion double -> signed!
@@ -127,10 +130,10 @@ instance PrintJS Stmt where
     str "return " .+. fromJS x
   fromJS (Block ss) = do
     ind <- indent <$> ask
-    let ind' = "  " ++ ind
+    let ind' = S.concat ["  ", ind]
     ss' <- local (\env -> env {indent = ind'}) $ mapM fromJS ss
     pure ["{\n", ind'] .+. pure (intercalate [";\n", ind'] ss')
-                      .+. pure [";\n", ind, "}"]
+                       .+. pure [";\n", ind, "}"]
   fromJS (If e a mb) = do
     ifPart <- str "if(" .+. fromJS e .+. str ")" .+. fromJS a
     case mb of
@@ -153,7 +156,7 @@ instance PrintJS Stmt where
 instance PrintJS Func where
   fromJS (Func params locals body) = do
     cfg <- tuning <$> ask
-    params' <- concat . intercalate [","] <$> mapM (fromJS . untyped) params
+    params' <- S.concat . intercalate [","] <$> mapM (fromJS . untyped) params
     let argdecls = case codeStyle cfg of
           ASMJS      -> [n := Typed t (Lit 0) | Typed t n <- params]
           JavaScript -> []
@@ -163,7 +166,7 @@ instance PrintJS Func where
       , str ")"
       ]
 
-str :: String -> Printer
+str :: JSString -> Printer
 str s = pure [s]
 
 (.+.) :: Printer -> Printer -> Printer

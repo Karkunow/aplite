@@ -32,7 +32,7 @@ type ApliteExport a =
   , FFI (ExportSig a))
 
 aplite :: ApliteExport a => CodeTuning -> a -> ExportSig a
-aplite t = ffi . toJSStr . compile t
+aplite t = ffi . compile t
 
 type family InterpCMD f where
   InterpCMD (a -> b) = InterpCMD b

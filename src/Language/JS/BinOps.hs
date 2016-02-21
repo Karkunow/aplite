@@ -1,5 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Language.JS.BinOps where
 import Prelude hiding (GT, LT)
+import Haste
 
 data BinOp
   = Add    | Sub   | Mul  | Div | Mod
@@ -8,6 +10,27 @@ data BinOp
   | Shl    | ShrL  | ShrA
   | BitAnd | BitOr | BitXor
     deriving (Eq)
+
+instance JSType BinOp where
+  toJSString Add       = "+"
+  toJSString Mul       = "*"
+  toJSString Sub       = "-"
+  toJSString Div       = "/"
+  toJSString Mod       = "%"
+  toJSString And       = "&&"
+  toJSString Or        = "||"
+  toJSString Eq        = "=="
+  toJSString Neq       = "!="
+  toJSString LT        = "<"
+  toJSString GT        = ">"
+  toJSString LTE       = "<="
+  toJSString GTE       = ">="
+  toJSString Shl       = "<<"
+  toJSString ShrL      = ">>>"
+  toJSString ShrA      = ">>"
+  toJSString BitAnd    = "&"
+  toJSString BitOr     = "|"
+  toJSString BitXor    = "^"
 
 instance Show BinOp where
   show Add       = "+"
