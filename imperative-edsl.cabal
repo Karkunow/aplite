@@ -46,7 +46,10 @@ library
 
   other-modules:
     Language.Embedded.Imperative.Backend.JS
+    Language.Embedded.Expression
     Language.JS.Monad
+    Language.JS.Syntax
+    Language.JS.CompExp
     Language.JS.Print
     Language.JS.Expression
     Language.JS.Export
@@ -93,6 +96,13 @@ library
       -- tagged needed for GHC 7.6
     srcloc,
     time >= 1.5.0.1
+
+  if impl(haste)
+    build-depends:
+      haste-lib  >= 0.5.4 && < 0.6,
+      haste-prim >= 0.5.4 && < 0.6
+  else
+    build-depends: haste-compiler >= 0.5.4 && < 0.6
 
   if flag(old-syntactic)
     build-depends:
