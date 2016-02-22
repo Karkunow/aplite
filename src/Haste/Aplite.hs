@@ -8,6 +8,7 @@ module Haste.Aplite
   , CExp
   , Bits (..)
   , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
+  , quot_, round_, i2n, i2b, (#%)
 -- not supported yet!  , cond, (?), (#!)
   , module Language.Embedded.Imperative
   , module Data.Int
@@ -29,16 +30,33 @@ import Data.Word
 type Aplite a = Program ApliteCMD (CExp a)
 
 type ApliteExport a =
-  ( InterpCMD a ~ Program ApliteCMD (Res a)
-  , UnIO (ExportSig a)
-  , Export a
-  , FFI (ExportSig a))
+  ( FFI (HaskellSig a)
+  , Export (ApliteSig a)
+  , UnIO (HaskellSig a)
+  , a ~ NoIO (HaskellSig a)
+  )
 
-aplite :: forall a. ApliteExport a => CodeTuning -> a -> NoIO (ExportSig a)
+aplite :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
 aplite t prog = unIO prog'
   where
-    prog' :: ExportSig a
+    prog' :: HaskellSig a
     prog' = ffi (compile t prog)
+
+type family HaskellSig a where
+  HaskellSig (a -> b) = (a -> HaskellSig b)
+  HaskellSig a        = IO a
+
+type family ApliteSig a where
+  ApliteSig (a -> b) = (ApliteArg a -> ApliteSig b)
+  ApliteSig a        = Aplite a
+
+type family ApliteArg a where
+  ApliteArg Double = CExp Double
+  ApliteArg Int    = CExp Int32
+  ApliteArg Int32  = CExp Int32
+  ApliteArg Word   = CExp Word32
+  ApliteArg Word32 = CExp Word32
+  ApliteArg Bool   = CExp Bool
 
 type family InterpCMD f where
   InterpCMD (a -> b) = InterpCMD b
