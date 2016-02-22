@@ -383,7 +383,13 @@ a      #% b | a == b = 0
 a      #% b          = constFold $ sugarSym (T $ Op BiRem) a b
 
 round_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
-round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "lround" round)
+round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.round" round)
+
+floor_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
+floor_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.floor" floor)
+
+ceiling_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
+ceiling_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.ceiling" ceiling)
 
 -- | Integral type casting
 i2n :: (Integral a, Num b, JSType b) => CExp a -> CExp b

@@ -8,7 +8,7 @@ module Haste.Aplite
   , CExp
   , Bits (..)
   , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
-  , quot_, round_, i2n, i2b, (#%)
+  , quot_, round_, floor_, ceiling_, i2n, i2b, (#%)
 -- not supported yet!  , cond, (?), (#!)
   , module Language.Embedded.Imperative
   , module Data.Int
