@@ -8,7 +8,7 @@ module Haste.Aplite
   , CExp
   , Bits (..)
   , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
-  , quot_, round_, floor_, ceiling_, i2n, i2b, (#%)
+  , quot_, round_, floor_, ceiling_, i2n, i2b, (#%), share
 -- not supported yet!  , cond, (?), (#!)
   , module Language.Embedded.Imperative
   , module Data.Int
@@ -35,6 +35,9 @@ type ApliteExport a =
   , UnIO (HaskellSig a)
   , a ~ NoIO (HaskellSig a)
   )
+
+share :: JSType a => CExp a -> Aplite a
+share x = initRef x >>= getRef
 
 aplite :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
 aplite t prog = unIO prog'
