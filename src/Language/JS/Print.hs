@@ -105,6 +105,9 @@ instance PrintJS Exp where
   -- TODO: ~~ for conversion double -> signed!
   fromJS (Cast _ x)   = fromJS x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
+  fromJS (Call f as)  = do
+    as' <- intercalate [","] <$> mapM (fromJS . untyped) as
+    pure $ [toJSString f, "("] ++ as' ++ [")"]
 
 isIntegral :: Double -> Bool
 isIntegral x = x == fromIntegral (truncate x :: Int)

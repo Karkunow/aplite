@@ -11,7 +11,7 @@ import Data.Proxy
 import Haste (JSString)
 
 import Data.Bits
-import Language.JS.Syntax
+import Language.JS.Syntax (Func (..))
 import Language.Embedded.Imperative
 
 compile :: Export a => CodeTuning -> a -> JSString

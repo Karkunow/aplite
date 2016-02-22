@@ -16,7 +16,7 @@ import Data.Bits
 import Language.JS.Monad
 import Language.JS.CompExp
 import Language.JS.Syntax hiding (
-    Op, Lit, GE, LE, GT, LT, Neq, Eq, Cast, Cond, typeOf
+    Op, Lit, GE, LE, GT, LT, Neq, Eq, Cast, Cond, Fun, typeOf
   )
 import qualified Language.JS.Syntax as JS
 
@@ -589,6 +589,13 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
        -> JSGen (Typed Exp)
     go a b = goWithType a b $ jsType (Proxy :: Proxy (DenResult sig))
 
+    genArgs :: forall sig. Args (AST T) sig -> JSGen [Typed Exp]
+    genArgs (a :* as) = do
+      a' <- compJSExp' a
+      as' <- genArgs as
+      pure (a':as')
+    genArgs _ = pure []
+
     goWithType :: forall sig. JSType (DenResult sig)
        => Sym sig
        -> Args (AST T) sig
@@ -601,7 +608,9 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
     goWithType (Const _ _ c) Nil t = do
       pure (Typed t (toJSExp c))
     goWithType (Fun _ f _) args t = do
-      error "TODO: FUNCTIONS"
+      args' <- genArgs args
+      pure (Typed t (JS.Call f args'))
+      where
     goWithType (UOp op) (a :* Nil) t = do
       a' <- compJSExp' a
       pure $ case op of
@@ -619,6 +628,7 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       t' <- compJSExp' t
       f' <- compJSExp' f
       pure (c' .? t' $ f')
+
 
 instance JSType a => ReturnValue (CExp a) where
   returnStmt = Just . Ret . evalJSGen 0 . compJSExp

@@ -4,7 +4,7 @@ module Language.JS.Export where
 import Language.Embedded.Imperative
 import Language.JS.CompExp
 import Language.JS.Expression hiding (Fun)
-import Language.JS.Syntax
+import Language.JS.Syntax hiding (Fun)
 import Language.JS.Monad
 
 data Fun a = Fun

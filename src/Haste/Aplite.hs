@@ -52,9 +52,9 @@ type family ApliteSig a where
 
 type family ApliteArg a where
   ApliteArg Double = CExp Double
-  ApliteArg Int    = CExp Int32
+  ApliteArg Int    = CExp Int32 -- NB: only valid for 32 bit arch!
   ApliteArg Int32  = CExp Int32
-  ApliteArg Word   = CExp Word32
+  ApliteArg Word   = CExp Word32 -- NB: only valid for 32 bit arch!
   ApliteArg Word32 = CExp Word32
   ApliteArg Bool   = CExp Bool
 

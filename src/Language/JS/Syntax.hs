@@ -60,7 +60,8 @@ data Exp
   | Neg  !(Typed Exp)
   | Not  !(Typed Exp)
   | Cast !Type !(Typed Exp)
-  | Cond !(Typed Exp) !(Typed Exp) !(Typed Exp)
+  | Cond !(Typed Exp) !(Typed Exp) !(Typed Exp) -- TODO: how to do this in ASM?
+  | Call !String ![Typed Exp]
     deriving Eq
 
 (.<) :: Typed Exp -> Typed Exp -> Typed Exp
