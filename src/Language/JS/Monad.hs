@@ -1,11 +1,12 @@
 module Language.JS.Monad where
 import Control.Monad.State
 import Language.JS.Syntax
+import Haste (JSString)
 
 data JSEnv = JSEnv
   { jsLocals     :: [Decl]
-  , jsGlobals    :: [Decl]
-  , jsParams     :: [Typed Id]
+  , jsFFI        :: [JSString]
+  , jsParams     :: [Param]
   , jsArgs       :: [Typed Exp]
   , jsStmts      :: [Stmt]
   , jsFinalStmts :: [Stmt]
@@ -15,7 +16,7 @@ data JSEnv = JSEnv
 emptyEnv :: Integer -> JSEnv
 emptyEnv startid = JSEnv
   { jsLocals = []
-  , jsGlobals = []
+  , jsFFI = []
   , jsParams = []
   , jsArgs = []
   , jsStmts = []
@@ -32,9 +33,8 @@ addLocal :: Type -> Id -> Maybe (Typed Exp) -> JSGen ()
 addLocal t n i =
   modify $ \env -> env {jsLocals = Decl t n (fmap untyped i) : jsLocals env}
 
-addGlobal :: Type -> Id -> Maybe (Typed Exp) -> JSGen ()
-addGlobal t n i =
-  modify $ \env -> env {jsLocals = Decl t n (fmap untyped i) : jsGlobals env}
+addImport :: JSString -> JSGen ()
+addImport f = modify $ \env -> env {jsFFI = f : jsFFI env}
 
 freshId :: JSGen Id
 freshId = do
@@ -80,7 +80,7 @@ inBlock_ = fmap snd . inBlock
 addArg :: Typed Exp -> JSGen ()
 addArg arg = modify $ \env -> env {jsArgs = arg : jsArgs env}
 
-addParam :: Typed Id -> JSGen ()
+addParam :: Param -> JSGen ()
 addParam p = modify $ \env -> env {jsParams = p : jsParams env}
 
 runJSGen :: ReturnValue a => Integer -> JSGen a -> Func
@@ -96,7 +96,7 @@ runJSGen startid m =
       }
 
 evalJSGen :: Integer -> JSGen a -> a
-evalJSGen startid m = evalState m (emptyEnv 0)
+evalJSGen startid m = evalState m (emptyEnv startid)
 
 class ReturnValue a where
   returnStmt :: a -> Maybe Stmt

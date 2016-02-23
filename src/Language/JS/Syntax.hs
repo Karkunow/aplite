@@ -1,12 +1,15 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, OverloadedStrings #-}
 -- | Restricted JavaScript syntax, suitable for generating ASM.js as well as
 --   regular JS.
 module Language.JS.Syntax
   ( module Language.JS.BinOps
   , ToJSExp (..), ToIdent (..)
-  , Type (..), isPtrTy
-  , Func (..), Id (..), Decl (..), Param, Typed (..), VarId
+  , Type (..), Param (..), Typed (..), isPtrTy, typed, param
+  , Func (..), Id (..), Decl (..), VarId
   , Exp (..), Stmt (..)
+  , StdFun, stdFunName, std_funs, callStdFun
+  , std_floor, std_ceiling, std_imul, std_sqrt, std_pow
+  , std_cos, std_sin, std_tan, std_atan2
   , jsNull, jsTrue, jsFalse
   , (.>), (.>=), (.<), (.<=), (.==), (./=), (.?)
   , sameTypeAs, mapTyped
@@ -15,6 +18,7 @@ import Prelude hiding (LT, GT)
 import Language.JS.BinOps
 import Data.Int
 import Data.Word
+import Haste
 
 class ToJSExp a where
   toJSExp :: a -> Exp
@@ -35,7 +39,7 @@ data Type
   | Unsigned
   | Double
   | Arr Type
-    deriving Eq
+    deriving (Eq, Show)
 
 isPtrTy :: Type -> Bool
 isPtrTy (Arr _) = True
@@ -49,7 +53,7 @@ type VarId = Integer
 -- | A JavaScript identifier.
 data Id
   = MkId {unId :: VarId}
-  | External {unExternal :: String}
+  | External {unExternal :: JSString}
     deriving (Show, Eq)
 
 -- | An untyped JavaScript expression with typed subexpressions.
@@ -61,29 +65,33 @@ data Exp
   | Not  !(Typed Exp)
   | Cast !Type !(Typed Exp)
   | Cond !(Typed Exp) !(Typed Exp) !(Typed Exp) -- TODO: how to do this in ASM?
-  | Call !String ![Typed Exp]
+  | Call !JSString ![Typed Exp]
     deriving Eq
 
+-- | Call a standard library function.
+callStdFun :: StdFun -> [Typed Exp] -> Exp
+callStdFun (StdFun f) = Call f
+
 (.<) :: Typed Exp -> Typed Exp -> Typed Exp
-a .< b = Typed Signed (Op LT a b)
+a .< b = typed Signed (Op LT a b)
 
 (.<=) :: Typed Exp -> Typed Exp -> Typed Exp
-a .<= b = Typed Signed (Op LTE a b)
+a .<= b = typed Signed (Op LTE a b)
 
 (.>) :: Typed Exp -> Typed Exp -> Typed Exp
-a .> b = Typed Signed (Op GT a b)
+a .> b = typed Signed (Op GT a b)
 
 (.>=) :: Typed Exp -> Typed Exp -> Typed Exp
-a .>= b = Typed Signed (Op GTE a b)
+a .>= b = typed Signed (Op GTE a b)
 
 (.==) :: Typed Exp -> Typed Exp -> Typed Exp
-a .== b = Typed Signed (Op Eq a b)
+a .== b = typed Signed (Op Eq a b)
 
 (./=) :: Typed Exp -> Typed Exp -> Typed Exp
-a ./= b = Typed Signed (Op Neq a b)
+a ./= b = typed Signed (Op Neq a b)
 
 (.?) :: Typed Exp -> Typed Exp -> Typed Exp -> Typed Exp
-(.?) c a b = Typed (typeOf a) (Cond c a b)
+(.?) c a b = typed (typeOf a) (Cond c a b)
 
 instance Num (Typed Exp) where
   a@(Typed t _) + b@(Typed t' _) | t == t' = Typed t (Op Add a b)
@@ -104,6 +112,9 @@ data Typed a = Typed
   , untyped :: !a
   } deriving Eq
 
+typed :: Type -> a -> Typed a
+typed = Typed
+
 -- | b at the same type as that of a.
 sameTypeAs :: Typed a -> b -> Typed b
 sameTypeAs (Typed t _) x = Typed t x
@@ -111,15 +122,21 @@ sameTypeAs (Typed t _) x = Typed t x
 -- | Maps a type-preserving function over a typed expression.
 --   E.g. @not_ = mapTyped Not :: Typed Exp -> Typed Exp@.
 mapTyped :: (Typed a -> b) -> Typed a -> Typed b
-mapTyped f tx@(Typed t x) = Typed t (f tx)
-
-not_ :: Typed Exp -> Typed Exp
-not_ = mapTyped Not
+mapTyped f tx@(Typed t _) = Typed t (f tx)
 
 instance Functor Typed where
   fmap f (Typed t a) = Typed t (f a)
 
-type Param = Typed Id
+data Param = Param
+  { paramType :: !Type
+  , paramName :: !Id
+  }
+
+-- | Create a function parameter. Unsigned is not a valid function parameter
+--   type, so unsigned parameters are turned into equivalent signed ones.
+param :: Type -> Id -> Param
+param Unsigned x = Param Signed x
+param t x        = Param t x
 
 -- | A variable declaration with optional initialization.
 data Decl = Decl
@@ -128,19 +145,42 @@ data Decl = Decl
   , declInit :: !(Maybe Exp)
   }
 
+-- | A standard library function.
+newtype StdFun = StdFun {stdFunName :: JSString}
+
+std_floor, std_ceiling, std_sqrt, std_imul, std_pow,
+  std_cos, std_sin, std_tan, std_atan2 :: StdFun
+std_floor    = StdFun "floor"
+std_ceiling  = StdFun "ceil"
+std_sqrt     = StdFun "sqrt"
+std_imul     = StdFun "imul"
+std_pow      = StdFun "pow"
+std_cos      = StdFun "cos"
+std_sin      = StdFun "sin"
+std_tan      = StdFun "tan"
+std_atan2    = StdFun "atan2"
+
+-- | All available standard library functions.
+std_funs :: [StdFun]
+std_funs =
+  [ std_floor, std_ceiling, std_sqrt, std_imul
+  , std_pow, std_cos, std_sin, std_tan
+  ]
+
 -- | A typed JavaScript statement.
 data Stmt
-  = !Id :=  !(Typed Exp)
-  | DeclStm !Decl
-  | Inc     !(Typed Id)
-  | Dec     !(Typed Id)
-  | Ret     !(Typed Exp)
-  | Block   ![Stmt]
-  | If      !(Typed Exp) !Stmt !(Maybe Stmt)
-  | Forever !Stmt
-  | For     !Stmt !(Typed Exp) !Stmt !Stmt
+  = !Id :=   !(Typed Exp)
+  | DeclStm  !Decl
+  | ParamStm !Param
+  | Inc      !(Typed Id)
+  | Dec      !(Typed Id)
+  | Ret      !(Typed Exp)
+  | Block    ![Stmt]
+  | If       !(Typed Exp) !Stmt !(Maybe Stmt)
+  | Forever  !Stmt
+  | For      !Stmt !(Typed Exp) !Stmt !Stmt
   | Break
-  | Assert  !(Typed Exp) !String
+  | Assert   !(Typed Exp) !JSString
 
 data Func = Func
   { funParams :: [Param]
@@ -149,10 +189,10 @@ data Func = Func
   }
 
 jsNull :: Typed Exp
-jsNull = Typed Unsigned (Lit $ -1)
+jsNull = typed Unsigned (Lit $ -1)
 
 jsTrue :: Typed Exp
-jsTrue = Typed Signed (Lit 1)
+jsTrue = typed Signed (Lit 1)
 
 jsFalse :: Typed Exp
-jsFalse = Typed Signed (Lit 0)
+jsFalse = typed Signed (Lit 0)

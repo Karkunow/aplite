@@ -9,12 +9,11 @@ import Control.Monad.State
 import Data.Proxy
 
 import Control.Monad.Operational.Higher
-import Language.JS.Expression
 import Language.Embedded.Imperative.CMD as CMD
-import Language.Embedded.Imperative.Frontend.General
 import Language.JS.Monad
 import Language.JS.Syntax as JS
 import Language.JS.CompExp
+import qualified Haste.JSString as S
 
 -- | Compile `RefCMD`
 compRefCMD :: forall exp prog a. CompJSExp exp
@@ -36,7 +35,7 @@ compRefCMD (InitRef exp) = do
 compRefCMD cmd@(GetRef (RefComp ref)) = do
     t <- compTypePP2 (Proxy :: Proxy exp) cmd
     v <- declareNewVar t
-    addStm (v := Typed t (Id (MkId ref)))
+    addStm (v := typed t (Id (MkId ref)))
     return (varExp v)
 compRefCMD (SetRef (RefComp ref) exp) = do
     ex <- compExp exp
@@ -128,7 +127,7 @@ compControlCMD (CMD.For (lo,step,hi) body) = do
     loe   <- compExp lo
     hie   <- compExp $ borderVal hi
     (i,n) <- declareNew (typeOf loe)
-    (_, bodyc) <- inBlock (body (undefined i))
+    (_, bodyc) <- inBlock (body (varExp n))
     let incl = borderIncl hi
         step' = sameTypeAs loe (toJSExp step)
         negStep' = sameTypeAs loe (toJSExp (negate step))
@@ -147,7 +146,7 @@ compControlCMD (CMD.For (lo,step,hi) body) = do
 compControlCMD CMD.Break = addStm JS.Break
 compControlCMD (CMD.Assert cond msg) = do
     c <- compExp cond
-    addStm $ JS.Assert c msg -- [cstm| assert($c && $msg); |]
+    addStm $ JS.Assert c (S.pack msg) -- [cstm| assert($c && $msg); |]
 
 {-
 compIOMode :: IOMode -> String

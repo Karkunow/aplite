@@ -53,6 +53,7 @@ import Data.Word
 import System.IO (IOMode (..))
 import qualified System.IO as IO
 import qualified Text.Printf as Printf
+import qualified Haste.JSString as S
 
 #if __GLASGOW_HASKELL__ < 710
 import Data.Foldable hiding (sequence_)
@@ -88,7 +89,7 @@ data Ref a
 
 instance ToIdent (Ref a)
   where
-    toIdent (RefComp r) = JS.External ('v' : show r)
+    toIdent (RefComp r) = JS.External $ S.pack ('v' : show r)
 
 -- | Commands for mutable references
 data RefCMD exp (prog :: * -> *) a
@@ -164,11 +165,11 @@ data IArr i a
 
 instance ToIdent (Arr i a)
   where
-    toIdent (ArrComp arr) = JS.External arr
+    toIdent (ArrComp arr) = JS.External (S.pack arr)
 
 instance ToIdent (IArr i a)
   where
-    toIdent (IArrComp arr) = JS.External arr
+    toIdent (IArrComp arr) = JS.External (S.pack arr)
 
 -- | Commands for mutable arrays
 data ArrCMD exp (prog :: * -> *) a
@@ -317,7 +318,7 @@ data Handle
 
 instance ToIdent Handle
   where
-    toIdent (HandleComp h) = JS.External h
+    toIdent (HandleComp h) = JS.External (S.pack h)
 
 -- | Handle to stdin
 stdin :: Handle
@@ -387,7 +388,7 @@ newtype Ptr a = PtrComp {ptrId :: String}
 
 instance ToIdent (Ptr a)
   where
-    toIdent = JS.External . ptrId
+    toIdent = JS.External . S.pack . ptrId
 
 -- | Abstract object
 data Object = Object
@@ -399,7 +400,7 @@ data Object = Object
 
 instance ToIdent Object
   where
-    toIdent (Object _ _ o) = JS.External o
+    toIdent (Object _ _ o) = JS.External (S.pack o)
 
 data FunArg exp where
   FunArg :: Arg arg => arg exp -> FunArg exp

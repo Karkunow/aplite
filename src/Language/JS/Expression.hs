@@ -6,6 +6,7 @@ import Language.Syntactic.Functional (Denotation)
 import Data.Proxy
 import Language.Syntactic hiding (Typed)
 import Data.Typeable
+import qualified Haste.JSString as S
 
 import Data.Int
 import Data.Word
@@ -382,14 +383,17 @@ _      #% LitP 1     = 0
 a      #% b | a == b = 0
 a      #% b          = constFold $ sugarSym (T $ Op BiRem) a b
 
-round_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
-round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.round" round)
+round_ :: (RealFrac a, JSType a) => CExp a -> CExp a
+round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "round" (fromInteger . round))
 
-floor_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
-floor_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.floor" floor)
+floor_ :: (RealFrac a, JSType a) => CExp a -> CExp a
+floor_ = constFold . sugarSym (T $ Fun ["<math.h>"] "floor" (fromInteger . floor))
 
-ceiling_ :: (RealFrac a, Integral b, JSType b) => CExp a -> CExp b
-ceiling_ = constFold . sugarSym (T $ Fun ["<math.h>"] "Math.ceiling" ceiling)
+ceiling_ :: (RealFrac a, JSType a) => CExp a -> CExp a
+ceiling_ = constFold . sugarSym (T $ Fun ["<math.h>"] "ceiling" (fromInteger . ceiling))
+
+f2n :: (RealFrac a, Num b, JSType b) => CExp a -> CExp b
+f2n a = constFold $ sugarSym (T $ Cast (fromInteger . truncate)) a
 
 -- | Integral type casting
 i2n :: (Integral a, Num b, JSType b) => CExp a -> CExp b
@@ -604,26 +608,26 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
     goWithType (Var v) Nil t = do
       genVar t v
     goWithType (Lit _ x) Nil t = do
-      pure (Typed t (toJSExp x))
+      pure (typed t (toJSExp x))
     goWithType (Const _ _ c) Nil t = do
-      pure (Typed t (toJSExp c))
+      pure (typed t (toJSExp c))
     goWithType (Fun _ f _) args t = do
       args' <- genArgs args
-      pure (Typed t (JS.Call f args'))
+      pure (typed t (JS.Call (S.pack f) args'))
       where
     goWithType (UOp op) (a :* Nil) t = do
       a' <- compJSExp' a
       pure $ case op of
-        UnNot -> Typed t (Not a')
-        UnNeg -> Typed t (Neg a')
+        UnNot -> typed t (Not a')
+        UnNeg -> typed t (Neg a')
     goWithType (Op op) (a :* b :* Nil) t = do
       a' <- compJSExp' a
       b' <- compJSExp' b
-      pure (Typed t (JS.Op (binaryOp op) a' b'))
+      pure (typed t (JS.Op (binaryOp op) a' b'))
     goWithType s@(Cast f) (a :* Nil) t = do
       a' <- compJSExp' a
-      pure (Typed t (JS.Cast t a'))
-    goWithType Cond (c :* t :* f :* Nil) typ = do
+      pure (typed t (JS.Cast t a'))
+    goWithType Cond (c :* t :* f :* Nil) _ = do
       c' <- compJSExp' c
       t' <- compJSExp' t
       f' <- compJSExp' f

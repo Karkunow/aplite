@@ -8,7 +8,7 @@ module Haste.Aplite
   , CExp
   , Bits (..)
   , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
-  , quot_, round_, floor_, ceiling_, i2n, i2b, (#%), share
+  , quot_, round_, floor_, ceiling_, i2n, i2b, f2n, (#%), share
 -- not supported yet!  , cond, (?), (#!)
   , module Language.Embedded.Imperative
   , module Data.Int
@@ -35,6 +35,9 @@ type ApliteExport a =
   , UnIO (HaskellSig a)
   , a ~ NoIO (HaskellSig a)
   )
+
+-- TODO for ASM.js:
+-- * Variable initializers should be 0 or 0.0, not type annotations.
 
 share :: JSType a => CExp a -> Aplite a
 share x = initRef x >>= getRef

@@ -22,12 +22,12 @@ type family RetVal a where
 class ReturnValue (Res f) => Export f where
   type Res f
   type ExportSig f
-  mkFun :: Integer -> [Typed Id] -> f -> Fun (Res f)
+  mkFun :: Integer -> [Param] -> f -> Fun (Res f)
 
 instance (JSType a, Export b) => Export (CExp a -> b) where
   type Res (CExp a -> b) = Res b
   type ExportSig (CExp a -> b) = a -> ExportSig b
-  mkFun n as f = mkFun (succ n) (Typed t (MkId n) : as) (f argexp)
+  mkFun n as f = mkFun (succ n) (param t (MkId n) : as) (f argexp)
     where t = jsType (undefined :: CExp a)
           argexp = varExp (MkId n)
 
@@ -36,13 +36,6 @@ instance ReturnValue a => Export (Program ApliteCMD a) where
   type ExportSig (Program ApliteCMD a) = RetVal a
   mkFun n as body = Fun
       { cgStartId    = n
-      , expFunParams = map unUnsigned $ reverse as
+      , expFunParams = reverse as
       , expFunBody   = body
       }
-
--- | Unsigned is not a valid argument type in ASM.js, so we change the
---   annotation on all unsigned arguments to signed, which is equivalent as
---   the value will be converted back into unsigned whenever it's used.
-unUnsigned :: Typed a -> Typed a
-unUnsigned (Typed Unsigned x) = Typed Signed x
-unUnsigned x                  = x

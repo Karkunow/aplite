@@ -49,7 +49,7 @@ declareNew :: Type -> JSGen (Typed Exp, Id)
 declareNew t = do
   v <- freshId
   addLocal t v Nothing
-  return (Typed t (Id v), v)
+  return (typed t (Id v), v)
 
 -- | Declare a new variable.
 declareNewVar :: Type -> JSGen Id
@@ -57,4 +57,4 @@ declareNewVar = fmap snd . declareNew
 
 -- | Generate a variable from a source language name.
 genVar :: Type -> String -> JSGen (Typed Exp)
-genVar t = fmap (Typed t . Id) . genIdFor
+genVar t = fmap (typed t . Id) . genIdFor
