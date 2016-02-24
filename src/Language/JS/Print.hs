@@ -118,9 +118,9 @@ instance PrintJS (Typed Id) where
   fromJS (Typed _ x) = fromJS x
 
 instance PrintJS (Typed Exp) where
-  needsParen (Typed _ _) = codeStyle . tuning <$> ask >>= \cs -> case cs of
+  needsParen (Typed _ x) = codeStyle . tuning <$> ask >>= \cs -> case cs of
     ASMJS      -> pure True
-    JavaScript -> pure False
+    JavaScript -> needsParen x
 
   fromJS (Typed Signed (Op Mul a b)) =
     fromJS $ Typed Signed (Call "imul" [a, b])
