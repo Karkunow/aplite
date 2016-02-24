@@ -7,8 +7,6 @@ import Data.List
 import qualified Haste.JSString as S
 import Haste (JSString, toJSString)
 
-{-# WARNING CodeStyle "TODO: ~~ for double -> signed conversion in ASM.js" #-}
-
 data CodeStyle
   = ASMJS
   | JavaScript
