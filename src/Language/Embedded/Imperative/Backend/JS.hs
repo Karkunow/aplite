@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 -- | JavaScript code generation for imperative commands
 module Language.Embedded.Imperative.Backend.JS where
 
@@ -21,15 +21,13 @@ compRefCMD :: forall exp prog a. CompJSExp exp
 compRefCMD cmd@NewRef = do
     t <- compTypePP2 (Proxy :: Proxy exp) cmd
     r <- freshId
-    if isPtrTy t
-      then addLocal t r (Just jsNull)
-      else addLocal t r Nothing
+    addLocal t r
     return (RefComp (unId r))
 compRefCMD (InitRef exp) = do
     t <- compType exp
     r <- freshId
     v <- compExp exp
-    addLocal t r Nothing
+    addLocal t r
     addStm (r := v)
     return (RefComp (unId r))
 compRefCMD cmd@(GetRef (RefComp ref)) = do
@@ -43,58 +41,49 @@ compRefCMD (SetRef (RefComp ref) exp) = do
 compRefCMD (UnsafeFreezeRef (RefComp v)) =
     return (varExp (MkId v))
 
-{-
 -- | Compile `ArrCMD`
-compArrCMD :: forall exp prog a. (CompExp exp, CompArrIx exp, EvalExp exp)
-           => ArrCMD exp prog a -> CGen a
+compArrCMD :: forall exp prog a. (CompJSExp exp, EvalExp exp)
+           => ArrCMD exp prog a -> JSGen a
 compArrCMD cmd@(NewArr size) = do
-    sym <- gensym "a"
+    sym <- genSym "a"
     n   <- compExp size
     t   <- compTypePP2 (Proxy :: Proxy exp) cmd
-    case n of
-      C.Const _ _ -> addLocal [cdecl| $ty:t $id:sym[ $n ]; |]
-      _ -> do
-        addInclude "<alloca.h>"
-        addLocal [cdecl| $ty:t * $id:sym; |]
-        addStm [cstm| $id:sym = alloca($n * sizeof($ty:t)); |]
-    return $ ArrComp sym
-compArrCMD cmd@(NewArr_) = do
-    sym <- gensym "a"
-    t   <- compTypePP2 (Proxy :: Proxy exp) cmd
-    addLocal [cdecl| $ty:t * $id:sym; |]
+    let name = named sym
+    addLocal (Arr t) name
+    addStm (name := newArr t n)
     return $ ArrComp sym
 compArrCMD cmd@(InitArr as) = do
-    sym <- gensym "a"
+    sym <- genSym "a"
     t   <- compTypePP2 (Proxy :: Proxy exp) cmd
     as' <- sequence [compExp (litExp a :: exp a') | (a :: a') <- as]
-    addLocal [cdecl| $ty:t $id:sym[] = $init:(arrayInit as');|]
+    let n = named sym
+    addLocal t n
+    addStm (n := newArr t (toTypedExp $ length as))
+    forM_ (zip [0 :: Int ..] as') $ \(i, x) ->
+      addStm (Write sym (toTypedExp i) x)
     return $ ArrComp sym
-compArrCMD (GetArr expi arr) = do
-    (v,n) <- freshVar
-    i     <- compExp expi
-    touchVar arr
-    addStm [cstm| $id:n = $id:arr[ $i ]; |]
-    return v
-compArrCMD (SetArr expi expv arr) = do
+compArrCMD (GetArr expi a@(ArrComp arr)) = do
+    t <- compTypePP (Proxy :: Proxy exp) a
+    n <- declareNewVar t
+    i <- compExp expi
+    addStm (n := typed t (Index t arr i))
+    return (varExp n)
+compArrCMD (SetArr expi expv (ArrComp arr)) = do
     v <- compExp expv
     i <- compExp expi
-    touchVar arr
-    addStm [cstm| $id:arr[ $i ] = $v; |]
-compArrCMD (CopyArr arr1 arr2 expl) = do
-    addInclude "<string.h>"
+    addStm (Write arr i v)
+compArrCMD (CopyArr a@(ArrComp arr1) (ArrComp arr2) expl) = do
     l <- compExp expl
-    t <- compTypePP (Proxy :: Proxy exp) arr1
-    addStm [cstm| memcpy($id:arr1, $id:arr2, $l * sizeof($ty:t)); |]
-compArrCMD (UnsafeGetArr expi arr) = do
-    touchVar arr
-    case compArrIx expi arr of
-        Nothing -> do
-          i <- compExp expi
-          (v,n) <- freshVar
-          addStm [cstm| $id:n = $id:arr[ $i ]; |]
-          return v
-        Just e -> return e
--}
+    t <- compTypePP (Proxy :: Proxy exp) a
+    let at = Arr t
+    -- TODO: this gives length in elements, not in bytes
+    addStm (ExpStm $ Typed t $ Call "memcpy" [ typed at (Id $ named arr1)
+                                             , typed at (Id $ named arr2)
+                                             , toTypedExp (sizeof t)
+                                             , l
+                                             ])
+compArrCMD (UnsafeFreezeArr (ArrComp arr)) = return $ IArrComp arr
+compArrCMD (UnsafeThawArr (IArrComp arr))  = return $ ArrComp arr
 
 -- | Compile `ControlCMD`
 compControlCMD :: CompJSExp exp => ControlCMD exp JSGen a -> JSGen a
@@ -214,13 +203,12 @@ instance CompJSExp exp => Interp (RefCMD exp) JSGen where
   interp = compRefCMD
 instance CompJSExp exp => Interp (ControlCMD exp) JSGen where
   interp = compControlCMD
+instance (CompJSExp exp, EvalExp exp) => Interp (ArrCMD exp) JSGen where
+  interp = compArrCMD
 
 {-
 instance CompJSExp exp => Interp (FileCMD exp) JSGen where
   interp = compFileCMD
 instance CompJSExp exp => Interp (ObjectCMD exp) JSGen where
   interp = compObjectCMD
-instance (CompJSExp exp, CompArrIx exp, EvalExp exp) =>
-         Interp (ArrCMD exp) JSGen where
-  interp = compArrCMD
 -}

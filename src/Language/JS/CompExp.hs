@@ -3,7 +3,7 @@
 module Language.JS.CompExp
   ( VarPred, EvalExp (..)
   , CompJSExp (..)
-  , declareNew, declareNewVar, genVar
+  , declareNew, declareNewVar, genVar, genSym
   ) where
 import Data.Proxy
 import Data.Constraint
@@ -48,7 +48,7 @@ class CompJSExp exp where
 declareNew :: Type -> JSGen (Typed Exp, Id)
 declareNew t = do
   v <- freshId
-  addLocal t v Nothing
+  addLocal t v
   return (typed t (Id v), v)
 
 -- | Declare a new variable.
@@ -58,3 +58,6 @@ declareNewVar = fmap snd . declareNew
 -- | Generate a variable from a source language name.
 genVar :: Type -> String -> JSGen (Typed Exp)
 genVar t = fmap (typed t . Id) . genIdFor
+
+genSym :: String -> JSGen String
+genSym s = ((s ++) . show . unId) <$> freshId

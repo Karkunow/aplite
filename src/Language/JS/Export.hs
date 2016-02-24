@@ -4,7 +4,7 @@ module Language.JS.Export where
 import Language.Embedded.Imperative
 import Language.JS.CompExp
 import Language.JS.Expression hiding (Fun)
-import Language.JS.Syntax hiding (Fun)
+import Language.JS.Syntax
 import Language.JS.Monad
 
 data Fun a = Fun
@@ -13,7 +13,7 @@ data Fun a = Fun
   , expFunBody   :: Program ApliteCMD a
   }
 
-type ApliteCMD = RefCMD CExp :+: ControlCMD CExp
+type ApliteCMD = RefCMD CExp :+: ControlCMD CExp :+: ArrCMD CExp
 
 type family RetVal a where
   RetVal (CExp a) = IO a

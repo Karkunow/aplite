@@ -3,9 +3,9 @@
 --   regular JS.
 module Language.JS.Syntax
   ( module Language.JS.BinOps
-  , ToJSExp (..), ToIdent (..)
-  , Type (..), Param (..), Typed (..), isPtrTy, typed, param
-  , Func (..), Id (..), Decl (..), VarId
+  , ToJSExp (..), ToIdent (..), toTypedExp, sizeof
+  , Type (..), Param (..), Typed (..), isPtrTy, named, typed, param, newArr
+  , Func (..), Id (..), Decl (..), VarId, ArrId
   , Exp (..), Stmt (..)
   , StdFun, stdFunName, std_funs, callStdFun
   , std_floor, std_ceiling, std_imul, std_sqrt, std_pow
@@ -18,20 +18,38 @@ import Prelude hiding (LT, GT)
 import Language.JS.BinOps
 import Data.Int
 import Data.Word
-import Haste
+import Haste hiding (fromString)
+import Data.String
 
 class ToJSExp a where
   toJSExp :: a -> Exp
+  expType :: a -> Type
+
+toTypedExp :: ToJSExp a => a -> Typed Exp
+toTypedExp x = Typed (expType x) (toJSExp x)
 
 instance ToJSExp Bool where
+  expType _ = Signed
   toJSExp True = Lit 1
   toJSExp _    = Lit 0
-instance ToJSExp Int32   where toJSExp = Lit . fromIntegral
-instance ToJSExp Word32  where toJSExp = Lit . fromIntegral
-instance ToJSExp Double  where toJSExp = Lit
-instance ToJSExp Int     where toJSExp = Lit . fromIntegral
-instance ToJSExp Integer where toJSExp = Lit . fromInteger
-instance ToJSExp Word    where toJSExp = Lit . fromIntegral
+instance ToJSExp Int32 where
+  expType _ = Signed
+  toJSExp = Lit . fromIntegral
+instance ToJSExp Word32 where
+  expType _ = Unsigned
+  toJSExp = Lit . fromIntegral
+instance ToJSExp Double where
+  expType _ = Double
+  toJSExp = Lit
+instance ToJSExp Int where
+  expType _ = Signed
+  toJSExp = Lit . fromIntegral
+instance ToJSExp Integer where
+  expType _ = Signed
+  toJSExp = Lit . fromInteger
+instance ToJSExp Word where
+  expType _ = Unsigned
+  toJSExp = Lit . fromIntegral
 
 -- | Type of a JavaScript expression.
 data Type
@@ -40,6 +58,12 @@ data Type
   | Double
   | Arr Type
     deriving (Eq, Show)
+
+sizeof :: Type -> Int
+sizeof Signed   = 4
+sizeof Unsigned = 4
+sizeof Double   = 8
+sizeof (Arr _)  = 4
 
 isPtrTy :: Type -> Bool
 isPtrTy (Arr _) = True
@@ -56,17 +80,26 @@ data Id
   | External {unExternal :: JSString}
     deriving (Show, Eq)
 
+named :: String -> Id
+named = External . fromString
+
+type ArrId = String
+
 -- | An untyped JavaScript expression with typed subexpressions.
 data Exp
-  = Id   !Id
-  | Op   !BinOp !(Typed Exp) !(Typed Exp)
-  | Lit  !Double -- Double can express the full range of Int/Word32
-  | Neg  !(Typed Exp)
-  | Not  !(Typed Exp)
-  | Cast !Type !(Typed Exp)
-  | Cond !(Typed Exp) !(Typed Exp) !(Typed Exp) -- TODO: how to do this in ASM?
-  | Call !JSString ![Typed Exp]
+  = Id    !Id
+  | Op    !BinOp !(Typed Exp) !(Typed Exp)
+  | Lit   !Double -- Double can express the full range of Int/Word32
+  | Neg   !(Typed Exp)
+  | Not   !(Typed Exp)
+  | Cast  !Type !(Typed Exp)
+  | Cond  !(Typed Exp) !(Typed Exp) !(Typed Exp) -- TODO: how to do this in ASM?
+  | Call  !JSString ![Typed Exp]
+  | Index !Type !ArrId !(Typed Exp)
     deriving Eq
+
+newArr :: Type -> Typed Exp -> Typed Exp
+newArr t sz = Typed (Arr t) $ Call "malloc" [toTypedExp (sizeof t), sz]
 
 -- | Call a standard library function.
 callStdFun :: StdFun -> [Typed Exp] -> Exp
@@ -142,7 +175,6 @@ param t x        = Param t x
 data Decl = Decl
   { declType :: !Type
   , declId   :: !Id
-  , declInit :: !(Maybe Exp)
   }
 
 -- | A standard library function.
@@ -172,6 +204,7 @@ data Stmt
   = !Id :=   !(Typed Exp)
   | DeclStm  !Decl
   | ParamStm !Param
+  | ExpStm   !(Typed Exp)
   | Inc      !(Typed Id)
   | Dec      !(Typed Id)
   | Ret      !(Typed Exp)
@@ -181,6 +214,7 @@ data Stmt
   | For      !Stmt !(Typed Exp) !Stmt !Stmt
   | Break
   | Assert   !(Typed Exp) !JSString
+  | Write    !ArrId !(Typed Exp) !(Typed Exp)
 
 data Func = Func
   { funParams :: [Param]

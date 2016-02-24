@@ -29,9 +29,9 @@ type JSGen = State JSEnv
 addStm :: Stmt -> JSGen ()
 addStm s = modify $ \env -> env {jsStmts = s : jsStmts env}
 
-addLocal :: Type -> Id -> Maybe (Typed Exp) -> JSGen ()
-addLocal t n i =
-  modify $ \env -> env {jsLocals = Decl t n (fmap untyped i) : jsLocals env}
+addLocal :: Type -> Id -> JSGen ()
+addLocal t n =
+  modify $ \env -> env {jsLocals = Decl t n : jsLocals env}
 
 addImport :: JSString -> JSGen ()
 addImport f = modify $ \env -> env {jsFFI = f : jsFFI env}

@@ -180,6 +180,7 @@ data ArrCMD exp (prog :: * -> *) a
     SetArr  :: (VarPred exp a, VarPred exp i, Integral i, Ix i) => exp i -> exp a -> Arr i a -> ArrCMD exp prog ()
     CopyArr :: (VarPred exp a, VarPred exp i, Integral i, Ix i) => Arr i a -> Arr i a -> exp i -> ArrCMD exp prog ()
     UnsafeFreezeArr :: (VarPred exp a, VarPred exp i, Integral i, Ix i) => Arr i a -> ArrCMD exp prog (IArr i a)
+    UnsafeThawArr   :: (VarPred exp a, VarPred exp i, Integral i, Ix i) => IArr i a -> ArrCMD exp prog (Arr i a)
 #if  __GLASGOW_HASKELL__>=708
   deriving Typeable
 #endif
@@ -194,7 +195,7 @@ instance HFunctor (ArrCMD exp)
     hfmap _ (SetArr i a arr)      = SetArr i a arr
     hfmap _ (CopyArr a1 a2 l)     = CopyArr a1 a2 l
     hfmap _ (UnsafeFreezeArr arr) = UnsafeFreezeArr arr
-
+    hfmap _ (UnsafeThawArr arr)   = UnsafeThawArr arr
 instance CompJSExp exp => DryInterp (ArrCMD exp)
   where
     dryInterp (NewArr _)      = liftM ArrComp $ freshStr "a"
@@ -203,6 +204,7 @@ instance CompJSExp exp => DryInterp (ArrCMD exp)
     dryInterp (SetArr _ _ _)  = return ()
     dryInterp (CopyArr _ _ _) = return ()
     dryInterp (UnsafeFreezeArr (ArrComp arr)) = return (IArrComp arr)
+    dryInterp (UnsafeThawArr (IArrComp arr))  = return (ArrComp arr)
 
 type instance IExp (ArrCMD e)       = e
 type instance IExp (ArrCMD e :+: i) = e
@@ -544,6 +546,8 @@ runArrCMD (CopyArr (ArrEval arr1) (ArrEval arr2) l) = do
       [ readArray arr2' i >>= writeArray arr1' i | i <- genericTake l' [0..] ]
 runArrCMD (UnsafeFreezeArr (ArrEval arr)) =
     fmap IArrEval . freeze =<< readIORef arr
+runArrCMD (UnsafeThawArr (IArrEval arr)) =
+    fmap ArrEval . newIORef =<< thaw arr
 
 runControlCMD :: EvalExp exp => ControlCMD exp IO a -> IO a
 runControlCMD (If c t f)        = if evalExp c then t else f

@@ -36,7 +36,7 @@ defaultTuning = CodeTuning
 asmjsTuning :: CodeTuning
 asmjsTuning = CodeTuning
   { codeStyle    = ASMJS
-  , explicitHeap = Just 0x1000
+  , explicitHeap = Just 0x10000
   , headerDecl   = ASMHeader
   }
 
@@ -70,22 +70,93 @@ wrap t prog
   | codeStyle t == ASMJS =
     S.concat
       [ "("
-      , asmModule t prog
-      , ")(window, null, new ArrayBuffer(", heapsize, ")).f"
+      , asmModule t memcpyASM prog
+      , ")(window, "
+      , ffifuns (codeStyle t)
+      , ", new ArrayBuffer(", heapsize, ")).f"
       ]
   | otherwise =
-    prog
+    S.concat
+      [ "("
+      , jsModule t prog
+      , ")(window, ", ffifuns (codeStyle t), ")"
+      ]
   where
     heapsize = maybe "0" toJSString (explicitHeap t)
+    ffifuns ASMJS      = S.concat [ "{ malloc:", mallocASM
+                                  , "}"]
+    ffifuns JavaScript = S.concat [ "{ malloc:", mallocJS
+                                  , ", memcpy:", memcpyJS
+                                  , "}"]
+    mallocASM = "function mallocASM(sz, len) {\
+      \  if(typeof mallocASM.next_addr === 'undefined') {\
+      \    mallocASM.next_addr = 0;\
+      \  }\
+      \  var ptr = mallocASM.next_addr/sz;\
+      \  var bytes = len*sz;\
+      \  bytes += (8 - (bytes % 8)) % 8;\
+      \  mallocASM.next_addr += bytes;\
+      \  return ptr;\
+      \}"
+    mallocJS = "function mallocJS(sz, len) {\
+      \  var buf = new ArrayBuffer(sz*len);\
+      \  if(len == 8) {\
+      \    return new Float64Array(buf);\
+      \  } else {\
+      \    return new Int32Array(buf);\
+      \  }\
+      \}"
+    memcpyJS = "function(from, to, sz, elems) {\
+      \  if(elems == from.length) {\
+      \    to.set(from);\
+      \  } else {\
+      \    for(var i = 0; i < elems; ++i) {\
+      \      to[i] = from[i];\
+      \    }\
+      \  }\
+      \}"
+    memcpyASM = "function memcpy(from, to, sz, elems) {\
+      \  from = from|0;\
+      \  to = to|0;\
+      \  sz = sz|0;\
+      \  elems = elems|0;\
+      \  var i = 0;\
+      \  if((sz|0) == (8|0)) {\
+      \    for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
+      \        hf[(((to+i)|0)<<3)>>3] = hf[(((from+i)|0)<<3)>>3];\
+      \    }\
+      \  } else {\
+      \    for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
+      \        hn[(((to+i)|0)<<2)>>2] = hn[(((from+i)|0)<<2)>>2];\
+      \    }\
+      \  }\
+      \}"
 
 -- | JSString representation of an ASM.js module.
-asmModule :: CodeTuning -> JSString -> JSString
-asmModule t prog = S.intercalate "\n"
+asmModule :: CodeTuning -> JSString -> JSString -> JSString
+asmModule t memcpy prog = S.intercalate "\n"
   [ "function(stdlib, ffi, heap){"
   , headerDeclStr (headerDecl t)
-    -- TODO: type specific views into the heap here!
+  , "var hn = new stdlib.Int32Array(heap);"
+  , "var hf = new stdlib.Float64Array(heap);"
   , stdlibImports
-  , "return ({f:(", prog, ")});"
+  , "var malloc = ffi.malloc;"
+  , memcpy
+  , prog
+  , "return ({f:f});"
+  , "}"
+  ]
+
+-- | JSString representation of a plain JS module.
+jsModule :: CodeTuning -> JSString -> JSString
+jsModule t prog = S.intercalate "\n"
+  [ "function(stdlib, ffi){"
+  , headerDeclStr (headerDecl t)
+  , stdlibImports
+  , "var malloc = ffi.malloc;"
+  , "var memcpy = ffi.memcpy;"
+  , prog
+  , "return f;"
   , "}"
   ]
 
@@ -102,6 +173,9 @@ class PrintJS a where
   
   fromJS :: a -> Printer
 
+instance PrintJS ArrId where
+  fromJS = str . S.pack
+
 instance PrintJS Param where
   fromJS (Param t n) = fromJS n .+. str " = " .+. typed t (fromJS n)
 
@@ -114,6 +188,10 @@ instance PrintJS (Typed Id) where
     ASMJS      -> pure True
     JavaScript -> pure False
   fromJS (Typed _ x) = fromJS x
+
+instance PrintJS (Typed ArrId) where
+  needsParen (Typed _ _) = pure False
+  fromJS (Typed _ x)     = fromJS x
 
 instance PrintJS (Typed Exp) where
   needsParen (Typed _ x) = codeStyle . tuning <$> ask >>= \cs -> case cs of
@@ -146,14 +224,11 @@ zeroFor Double = "0.0"
 zeroFor _      = "0"
 
 instance PrintJS Decl where
-  fromJS (Decl t n mx) = do
+  fromJS (Decl t n) = do
+      v <- fromJS n
       codeStyle . tuning <$> ask >>= \cs -> case cs of
-        ASMJS      -> str "var " .+. fromJS n .+. asmInit
-        JavaScript -> str "var " .+. fromJS n .+. jsInit
-    where
-      asmInit :: Printer
-      asmInit = str " = " .+. maybe (str (zeroFor t)) fromJS mx
-      jsInit  = maybe (pure []) (\x -> str " = " .+. fromJS x) mx
+        ASMJS      -> pure ("var " : v) .+. pure [" = ", zeroFor t]
+        JavaScript -> pure ("var " : v)
 
 instance PrintJS BinOp where
   fromJS op = pure [" ", (toJSString op), " "]
@@ -173,11 +248,28 @@ instance PrintJS Exp where
   fromJS (Cast t x)   = genCast t x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
   fromJS (Call f as)  = do
-    prefix <- codeStyle . tuning <$> ask >>= \cs -> case cs of
-      ASMJS      -> pure ""
-      JavaScript -> pure "Math."
-    as' <- intercalate [","] <$> mapM (fromJS . untyped) as
-    pure $ [prefix, toJSString f, "("] ++ as' ++ [")"]
+    as' <- intercalate [","] <$> mapM fromJS as
+    pure $ [toJSString f, "("] ++ as' ++ [")"]
+  fromJS (Index t arr ix) = do
+    codeStyle . tuning <$> ask >>= \cs -> case cs of
+      ASMJS      -> asmIx t arr ix
+      JavaScript -> str (S.pack arr) .+. str "[" .+. fromJS ix .+. str "]"
+
+asmIx :: Type -> ArrId -> Typed Exp -> Printer
+asmIx t arr ix = foldr (.+.) (pure [])
+    [ pure [heap t, "[((", S.pack arr, "+("]
+    , fromJS ix
+    , pure ["))<<", n, ")>>", n, "]"]
+    ]
+  where
+    n = case t of
+      Double -> "3"
+      _      -> "2"
+
+-- | Get the appropriate heap view for the given type.
+heap :: Type -> JSString
+heap Double = "hf"
+heap _      = "hn"
 
 genCast :: Type -> Typed Exp -> Printer
 genCast Signed (Typed Double x)   = str "(~~(" .+. fromJS x .+. str "))"
@@ -194,6 +286,8 @@ instance PrintJS Stmt where
     fromJS d
   fromJS (ParamStm p) =
     fromJS p
+  fromJS (ExpStm (Typed _ e)) =
+    fromJS e
   fromJS (Inc x) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS ->
@@ -229,10 +323,16 @@ instance PrintJS Stmt where
       ]
   fromJS Break =
     str "break"
-  fromJS (Assert e s) =
+  fromJS (Assert _ _) =
     error "TODO: assert"
+  fromJS (Write arr ix x) = do
+    codeStyle . tuning <$> ask >>= \cs -> case cs of
+      ASMJS ->
+        asmIx t arr ix .+. str " = " .+. fromJS x
+      JavaScript ->
+        str (S.pack arr) .+. str "[" .+. fromJS ix .+. str "] = " .+. fromJS x
+    where t = typeOf x
 
--- TODO: wrap this in proper ASM.js module when appropriate
 instance PrintJS Func where
   fromJS (Func params locals body) = do
     cfg <- tuning <$> ask
@@ -241,9 +341,8 @@ instance PrintJS Func where
           ASMJS      -> map ParamStm params
           JavaScript -> []
     foldr (.+.) (pure [])
-      [ str "(function(", str params', str ")"
+      [ str "function f(", str params', str ")"
       , fromJS (Block (argdecls ++ map DeclStm locals ++ body))
-      , str ")"
       ]
 
 str :: JSString -> Printer
@@ -257,6 +356,7 @@ typed :: Type -> Printer -> Printer
 typed Double m   = m >>= \x -> pure ("+":x)
 typed Signed m   = m >>= \x -> pure (x ++ ["|0"])
 typed Unsigned m = m >>= \x -> pure (x ++ [">>>0"])
+typed (Arr _) m  = m >>= \x -> pure (x ++ ["|0"])
 
 paren :: Printer -> Printer
 paren m = m >>= \x -> pure $ ["("] ++ x ++ [")"]
