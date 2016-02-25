@@ -76,8 +76,8 @@ type VarId = Integer
 
 -- | A JavaScript identifier.
 data Id
-  = MkId {unId :: VarId}
-  | External {unExternal :: JSString}
+  = MkId     {unId :: !VarId}
+  | External {unExternal :: !JSString}
     deriving (Show, Eq)
 
 named :: String -> Id
@@ -217,9 +217,9 @@ data Stmt
   | Write    !ArrId !(Typed Exp) !(Typed Exp)
 
 data Func = Func
-  { funParams :: [Param]
-  , funLocals :: [Decl]
-  , funBody   :: [Stmt]
+  { funParams :: ![Param]
+  , funLocals :: ![Decl]
+  , funBody   :: ![Stmt]
   }
 
 jsNull :: Typed Exp

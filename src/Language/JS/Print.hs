@@ -1,11 +1,15 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 module Language.JS.Print where
 import Language.JS.Syntax hiding (typed)
-import Control.Monad.Reader
 import Control.Monad
+import Control.Monad.Cont
 import Data.List
+
 import qualified Haste.JSString as S
 import Haste (JSString, toJSString)
+import Haste.Foreign
+import Haste.Prim
+import Data.IORef
 
 data CodeStyle
   = ASMJS
@@ -21,9 +25,9 @@ data CodeHeader
 type HeapSize = Int
 
 data CodeTuning = CodeTuning
-  { codeStyle    :: CodeStyle
-  , headerDecl   :: CodeHeader
-  , explicitHeap :: Maybe HeapSize
+  { codeStyle    :: !CodeStyle
+  , headerDecl   :: !CodeHeader
+  , explicitHeap :: !(Maybe HeapSize)
   }
 
 defaultTuning :: CodeTuning
@@ -47,20 +51,80 @@ headerDeclStr ASMHeader    = "\"use asm\";"
 headerDeclStr NoHeader     = ""
 
 data PrintEnv = PrintEnv
-  { indent :: JSString
-  , tuning :: CodeTuning
+  { indent  :: !JSString
+  , builder :: !Builder
+  , tuning  :: !CodeTuning
   }
 
-type PrintM = Reader PrintEnv
-type Printer = PrintM [JSString]
+newtype PrintM a = PrintM {unP :: PrintEnv -> IO a}
+type Printer = PrintM ()
+
+{-# INLINE ask #-}
+ask :: PrintM PrintEnv
+ask = PrintM $ \env -> pure env
+
+{-# INLINE local #-}
+local :: (PrintEnv -> PrintEnv) -> PrintM a -> PrintM a
+local f (PrintM m) = PrintM $ \env -> m (f env)
+
+instance Monad PrintM where
+  {-# INLINE return #-}
+  return x = PrintM (\_ -> return x)
+
+  {-# INLINE (>>=) #-}
+  PrintM m >>= f = PrintM $ \env -> do
+    x <- m env
+    unP (f x) env
+
+instance Applicative PrintM where
+  {-# INLINE pure #-}
+  pure  = return
+
+  {-# INLINE (<*>) #-}
+  (<*>) = ap
+
+instance Functor PrintM where
+  {-# INLINE fmap #-}
+  fmap f x = x >>= pure . f
+
+runPrinter :: CodeTuning -> Printer -> JSString
+runPrinter t (PrintM p) = veryUnsafePerformIO $ do
+  b <- newBuilder_
+  p (PrintEnv "" b t)
+  finalize_ b
+
+#ifdef __HASTE__
+type Builder = JSAny
+
+push_ :: Builder -> JSString -> IO ()
+push_ = ffi "(function(b,s){b.push(s);})"
+
+finalize_ :: Builder -> IO JSString
+finalize_ = ffi "(function(b){return b.join('');})"
+
+newBuilder_ :: IO Builder
+newBuilder_ = ffi "(function(){return [];})"
+
+#else
+
+type Builder = IORef [JSString]
+
+push_ :: Builder -> JSString -> IO ()
+push_ b s = atomicModifyIORef' b (\ss -> (s:ss, ()))
+
+finalize_ :: Builder -> IO JSString
+finalize_ b = S.concat . reverse <$> readIORef b
+
+newBuilder_ :: IO Builder
+newBuilder_ = newIORef []
+#endif
+
+{-# INLINE push #-}
+push :: JSString -> Printer
+push s = PrintM $ \env -> push_ (builder env) s
 
 printJS :: PrintJS a => CodeTuning -> a -> JSString
-printJS t = wrap t . S.concat . flip runReader env . fromJS
-  where
-    env = PrintEnv
-      { indent = ""
-      , tuning = t
-      }
+printJS t = wrap t . runPrinter t . fromJS
 
 -- | Add pre- and post scaffolding to a string of JS based on the current
 --   code tuning.
@@ -89,48 +153,48 @@ wrap t prog
                                   , ", memcpy:", memcpyJS
                                   , "}"]
     mallocASM = "function mallocASM(sz, len) {\
-      \  if(typeof mallocASM.next_addr === 'undefined') {\
-      \    mallocASM.next_addr = 0;\
-      \  }\
-      \  var ptr = mallocASM.next_addr/sz;\
-      \  var bytes = len*sz;\
-      \  bytes += (8 - (bytes % 8)) % 8;\
-      \  mallocASM.next_addr += bytes;\
-      \  return ptr;\
-      \}"
+        if(typeof mallocASM.next_addr === 'undefined') {\
+          mallocASM.next_addr = 0;\
+        }\
+        var ptr = mallocASM.next_addr/sz;\
+        var bytes = len*sz;\
+        bytes += (8 - (bytes % 8)) % 8;\
+        mallocASM.next_addr += bytes;\
+        return ptr;\
+      }"
     mallocJS = "function mallocJS(sz, len) {\
-      \  var buf = new ArrayBuffer(sz*len);\
-      \  if(len == 8) {\
-      \    return new Float64Array(buf);\
-      \  } else {\
-      \    return new Int32Array(buf);\
-      \  }\
-      \}"
+        var buf = new ArrayBuffer(sz*len);\
+        if(len == 8) {\
+          return new Float64Array(buf);\
+        } else {\
+          return new Int32Array(buf);\
+        }\
+      }"
     memcpyJS = "function(from, to, sz, elems) {\
-      \  if(elems == from.length) {\
-      \    to.set(from);\
-      \  } else {\
-      \    for(var i = 0; i < elems; ++i) {\
-      \      to[i] = from[i];\
-      \    }\
-      \  }\
-      \}"
+        if(elems == from.length) {\
+          to.set(from);\
+        } else {\
+          for(var i = 0; i < elems; ++i) {\
+            to[i] = from[i];\
+          }\
+        }\
+      }"
     memcpyASM = "function memcpy(from, to, sz, elems) {\
-      \  from = from|0;\
-      \  to = to|0;\
-      \  sz = sz|0;\
-      \  elems = elems|0;\
-      \  var i = 0;\
-      \  if((sz|0) == (8|0)) {\
-      \    for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
-      \        hf[(((to+i)|0)<<3)>>3] = hf[(((from+i)|0)<<3)>>3];\
-      \    }\
-      \  } else {\
-      \    for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
-      \        hn[(((to+i)|0)<<2)>>2] = hn[(((from+i)|0)<<2)>>2];\
-      \    }\
-      \  }\
-      \}"
+        from = from|0;\
+        to = to|0;\
+        sz = sz|0;\
+        elems = elems|0;\
+        var i = 0;\
+        if((sz|0) == (8|0)) {\
+          for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
+              hf[(((to+i)|0)<<3)>>3] = hf[(((from+i)|0)<<3)>>3];\
+          }\
+        } else {\
+          for(i = 0; (i|0) < (elems|0); i = (i+1)|0) {\
+              hn[(((to+i)|0)<<2)>>2] = hn[(((from+i)|0)<<2)>>2];\
+          }\
+        }\
+      }"
 
 -- | JSString representation of an ASM.js module.
 asmModule :: CodeTuning -> JSString -> JSString -> JSString
@@ -174,14 +238,17 @@ class PrintJS a where
   fromJS :: a -> Printer
 
 instance PrintJS ArrId where
-  fromJS = str . S.pack
+  fromJS = push . S.pack
 
 instance PrintJS Param where
-  fromJS (Param t n) = fromJS n .+. str " = " .+. typed t (fromJS n)
+  fromJS (Param t n) = do
+    fromJS n
+    push " = "
+    typed t (fromJS n)
 
 instance PrintJS Id where
-  fromJS (MkId n)     = pure ["v", toJSString n]
-  fromJS (External n) = pure [toJSString n]
+  fromJS (MkId n)     = push "v" >> push (toJSString n)
+  fromJS (External n) = push (toJSString n)
 
 instance PrintJS (Typed Id) where
   needsParen (Typed _ _) = codeStyle . tuning <$> ask >>= \cs -> case cs of
@@ -225,13 +292,12 @@ zeroFor _      = "0"
 
 instance PrintJS Decl where
   fromJS (Decl t n) = do
-      v <- fromJS n
       codeStyle . tuning <$> ask >>= \cs -> case cs of
-        ASMJS      -> pure ("var " : v) .+. pure [" = ", zeroFor t]
-        JavaScript -> pure ("var " : v)
+        ASMJS      -> push "var " >> fromJS n >> push " = " >> push (zeroFor t)
+        JavaScript -> push "var " >> fromJS n
 
 instance PrintJS BinOp where
-  fromJS op = pure [" ", (toJSString op), " "]
+  fromJS op = push " " >> push (toJSString op) >> push " "
 
 instance PrintJS Exp where
   needsParen (Id _)  = pure False
@@ -239,32 +305,44 @@ instance PrintJS Exp where
   needsParen _       = pure True
 
   fromJS (Id n)       = fromJS n
-  fromJS (Op op a b)  = parenIfNecessary a .+. fromJS op .+. parenIfNecessary b
+  fromJS (Op op a b)  = parenIfNecessary a >> fromJS op >> parenIfNecessary b
   fromJS (Lit x)
-    | isIntegral x    = str (toJSString (truncate x :: Int))
-    | otherwise       = str (toJSString x)
-  fromJS (Neg x)      = str "-(" .+. fromJS x .+. str ")"
-  fromJS (Not x)      = str "!(" .+. fromJS x .+. str ")"
+    | isIntegral x    = push (toJSString (truncate x :: Int))
+    | otherwise       = push (toJSString x)
+  fromJS (Neg x)      = push "-(" >> fromJS x >> push ")"
+  fromJS (Not x)      = push "!(" >> fromJS x >> push ")"
   fromJS (Cast t x)   = genCast t x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
   fromJS (Call f as)  = do
-    as' <- intercalate [","] <$> mapM fromJS as
-    pure $ [toJSString f, "("] ++ as' ++ [")"]
+    push (toJSString f)
+    push "("
+    sepBy "," (map fromJS as)
+    push ")"
   fromJS (Index t arr ix) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS      -> asmIx t arr ix
-      JavaScript -> str (S.pack arr) .+. str "[" .+. fromJS ix .+. str "]"
+      JavaScript -> push (S.pack arr) >> push "[" >> fromJS ix >> push "]"
+
+sepBy :: JSString -> [Printer] -> Printer
+sepBy _ []     = return ()
+sepBy s (p:ps) = p >> when (not $ null ps) (push s) >> sepBy s ps
 
 asmIx :: Type -> ArrId -> Typed Exp -> Printer
-asmIx t arr ix = foldr (.+.) (pure [])
-    [ pure [heap t, "[((", S.pack arr, "+("]
-    , fromJS ix
-    , pure ["))<<", n, ")>>", n, "]"]
-    ]
+asmIx t arr ix = do
+    push (heap t)
+    push "[(("
+    push (S.pack arr)
+    push "+("
+    fromJS ix
+    push "))<<"
+    pushShift
+    push ")>>"
+    pushShift
+    push "]"
   where
-    n = case t of
-      Double -> "3"
-      _      -> "2"
+    pushShift = case t of
+      Double -> push "3"
+      _      -> push "2"
 
 -- | Get the appropriate heap view for the given type.
 heap :: Type -> JSString
@@ -272,8 +350,8 @@ heap Double = "hf"
 heap _      = "hn"
 
 genCast :: Type -> Typed Exp -> Printer
-genCast Signed (Typed Double x)   = str "(~~(" .+. fromJS x .+. str "))"
-genCast Unsigned (Typed Double x) = str "((~~(" .+. fromJS x .+. str "))>>>0)"
+genCast Signed (Typed Double x)   = push "(~~(" >> fromJS x >> push "))"
+genCast Unsigned (Typed Double x) = push "((~~(" >> fromJS x >> push "))>>>0)"
 genCast _ x                       = fromJS x
 
 isIntegral :: Double -> Bool
@@ -281,7 +359,7 @@ isIntegral x = x == fromIntegral (truncate x :: Int)
 
 instance PrintJS Stmt where
   fromJS (a := b) =
-    fromJS a .+. str " = " .+. fromJS b
+    fromJS a >> push " = " >> fromJS b
   fromJS (DeclStm d) =
     fromJS d
   fromJS (ParamStm p) =
@@ -290,73 +368,77 @@ instance PrintJS Stmt where
     fromJS e
   fromJS (Inc x) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
-      ASMJS ->
-        fromJS x .+. str " = " .+. typed (typeOf x) (paren $ fromJS x .+. str "+1")
-      JavaScript ->
-        str "++" .+. fromJS x
+      ASMJS -> do
+        fromJS x
+        push " = "
+        typed (typeOf x) (paren $ fromJS x >> push "+1")
+      JavaScript -> do
+        push "++"
+        fromJS x
   fromJS (Dec x) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
-      ASMJS ->
-        fromJS x .+. str " = " .+. typed (typeOf x) (paren $ fromJS x .+. str "-1")
-      JavaScript ->
-        str "--" .+. fromJS x
+      ASMJS -> do
+        fromJS x
+        push " = "
+        typed (typeOf x) (paren $ fromJS x >> push "-1")
+      JavaScript -> do
+        push "--"
+        fromJS x
   fromJS (Ret x) =
-    str "return " .+. fromJS x
+    push "return " >> fromJS x
   fromJS (Block ss) = do
     ind <- indent <$> ask
     let ind' = S.concat ["  ", ind]
-    ss' <- local (\env -> env {indent = ind'}) $ mapM fromJS ss
-    pure ["{\n", ind'] .+. pure (intercalate [";\n", ind'] ss')
-                       .+. pure [";\n", ind, "}"]
+        lineSep = S.append ";\n" ind'
+    push "{\n"
+    push ind'
+    local (\env -> env {indent = ind'}) $ sepBy lineSep (map fromJS ss)
+    push ";\n"
+    push ind
+    push "}"
   fromJS (If e a mb) = do
-    ifPart <- str "if(" .+. fromJS e .+. str ")" .+. fromJS a
+    push "if(" >> fromJS e >> push ")"
+    fromJS a
     case mb of
-      Just b -> pure ifPart .+. str "else" .+. fromJS b
-      _      -> pure ifPart
+      Just b -> push "else" >> fromJS b
+      _      -> return ()
   fromJS (Forever s) =
-    str "while(1)" .+. fromJS s
-  fromJS (For i cond step body) =
-    foldr (.+.) (pure [])
-      [ str "for(", fromJS i, str ";", fromJS cond, str ";", fromJS step
-      , str ")"
-      , fromJS body
-      ]
+    push "while(1)" >> fromJS s
+  fromJS (For i cond step body) = do
+    push "for(" >> fromJS i >> push ";"
+    fromJS cond >> push ";"
+    fromJS step >> push ")"
+    fromJS body
   fromJS Break =
-    str "break"
+    push "break"
   fromJS (Assert _ _) =
     error "TODO: assert"
   fromJS (Write arr ix x) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS ->
-        asmIx t arr ix .+. str " = " .+. fromJS x
+        asmIx t arr ix >> push " = " >> fromJS x
       JavaScript ->
-        str (S.pack arr) .+. str "[" .+. fromJS ix .+. str "] = " .+. fromJS x
+        push (S.pack arr) >> push "[" >> fromJS ix >> push "] = " >> fromJS x
     where t = typeOf x
 
 instance PrintJS Func where
   fromJS (Func params locals body) = do
     cfg <- tuning <$> ask
-    params' <- S.concat . intercalate [","] <$> mapM (fromJS . paramName) params
     let argdecls = case codeStyle cfg of
           ASMJS      -> map ParamStm params
           JavaScript -> []
-    foldr (.+.) (pure [])
-      [ str "function f(", str params', str ")"
-      , fromJS (Block (argdecls ++ map DeclStm locals ++ body))
-      ]
+    push "function f("
+    sepBy "," (map (fromJS . paramName) params)
+    push ")"
+    fromJS (Block (argdecls ++ map DeclStm locals ++ body))
 
-str :: JSString -> Printer
-str s = pure [s]
-
-(.+.) :: Printer -> Printer -> Printer
-(.+.) = liftM2 (++)
-infixr 7 .+.
-
+{-# INLINE typed #-}
 typed :: Type -> Printer -> Printer
-typed Double m   = m >>= \x -> pure ("+":x)
-typed Signed m   = m >>= \x -> pure (x ++ ["|0"])
-typed Unsigned m = m >>= \x -> pure (x ++ [">>>0"])
-typed (Arr _) m  = m >>= \x -> pure (x ++ ["|0"])
+typed Double m   = push "+" >> m
+typed Signed m   = m >> push "|0"
+typed Unsigned m = m >> push ">>>0"
+typed (Arr _) m  = m >> push "|0"
 
+{-# INLINE paren #-}
 paren :: Printer -> Printer
-paren m = m >>= \x -> pure $ ["("] ++ x ++ [")"]
+paren m = push "(" >> m >> push ")"
