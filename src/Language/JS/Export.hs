@@ -21,7 +21,7 @@ type family RetVal a where
   RetVal a        = IO a
 
 instance JSType e => ReturnValue (Arr i e) where
-  returnStmt (ArrComp a) = Just . Ret . typed t . Id . named $ a
+  returnStmt (ArrComp a) = Just . pure . Ret . typed t . Id . named $ a
     where t = Arr (jsType (undefined :: CExp e))
 
 class ReturnValue (Res f) => Export f where

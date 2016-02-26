@@ -4,6 +4,7 @@ import Language.JS.Syntax hiding (typed)
 import Control.Monad
 import Control.Monad.Cont
 import Data.List
+import Data.IORef
 
 import qualified Haste.JSString as S
 import Haste (JSString, toJSString)
@@ -52,76 +53,70 @@ headerDeclStr NoHeader     = ""
 
 data PrintEnv = PrintEnv
   { indent  :: !JSString
-  , builder :: !Builder
   , tuning  :: !CodeTuning
   }
 
-newtype PrintM a = PrintM {unP :: PrintEnv -> IO a}
+type PrintM = ContT JSString IO
 type Printer = PrintM ()
+
+{-# NOINLINE envref #-}
+envref :: IORef PrintEnv
+envref = veryUnsafePerformIO $ newIORef undefined
 
 {-# INLINE ask #-}
 ask :: PrintM PrintEnv
-ask = PrintM $ \env -> pure env
+ask = lift $ readIORef envref
 
 {-# INLINE local #-}
 local :: (PrintEnv -> PrintEnv) -> PrintM a -> PrintM a
-local f (PrintM m) = PrintM $ \env -> m (f env)
-
-instance Monad PrintM where
-  {-# INLINE return #-}
-  return x = PrintM (\_ -> return x)
-
-  {-# INLINE (>>=) #-}
-  PrintM m >>= f = PrintM $ \env -> do
-    x <- m env
-    unP (f x) env
-
-instance Applicative PrintM where
-  {-# INLINE pure #-}
-  pure  = return
-
-  {-# INLINE (<*>) #-}
-  (<*>) = ap
-
-instance Functor PrintM where
-  {-# INLINE fmap #-}
-  fmap f x = x >>= pure . f
+local f m = do
+  env <- ask
+  lift $ writeIORef envref $! (f env)
+  x <- m
+  lift $ writeIORef envref $! env
+  return x
 
 runPrinter :: CodeTuning -> Printer -> JSString
-runPrinter t (PrintM p) = veryUnsafePerformIO $ do
-  b <- newBuilder_
-  p (PrintEnv "" b t)
-  finalize_ b
+runPrinter t m = veryUnsafePerformIO $ do
+  newBuilder_
+  writeIORef envref $! PrintEnv "" t
+  runContT m (const finalize_)
 
 #ifdef __HASTE__
 type Builder = JSAny
 
-push_ :: Builder -> JSString -> IO ()
-push_ = ffi "(function(b,s){b.push(s);})"
+newBuilder_ :: IO ()
+newBuilder_ = ffi "(function(){window.__b = [];})"
 
-finalize_ :: Builder -> IO JSString
-finalize_ = ffi "(function(b){return b.join('');})"
+push_ :: JSString -> IO ()
+push_ = ffi "(function(s){window.__b.push(s);})"
 
-newBuilder_ :: IO Builder
-newBuilder_ = ffi "(function(){return [];})"
+finalize_ :: IO JSString
+finalize_ = ffi "(function(){var r = window.__b.join(''); delete window.__b; return r;})"
 
 #else
 
+{-# NOINLINE builderref #-}
+builderref :: IORef Builder
+builderref = veryUnsafePerformIO $ newIORef []
+
 type Builder = IORef [JSString]
 
-push_ :: Builder -> JSString -> IO ()
-push_ b s = atomicModifyIORef' b (\ss -> (s:ss, ()))
+push_ :: JSString -> IO ()
+push_ s = do
+  b <- readIORef builderref
+  atomicModifyIORef' b (\ss -> (s:ss, ()))
 
-finalize_ :: Builder -> IO JSString
-finalize_ b = S.concat . reverse <$> readIORef b
+finalize_ :: IO JSString
+finalize_ = S.concat . reverse <$> readIORef builderref
 
-newBuilder_ :: IO Builder
-newBuilder_ = newIORef []
+newBuilder_ :: IO ()
+newBuilder_ = writeIORef builderref []
 #endif
 
 {-# INLINE push #-}
 push :: JSString -> Printer
-push s = PrintM $ \env -> push_ (builder env) s
+push s = lift $ push_ s
 
 printJS :: PrintJS a => CodeTuning -> a -> JSString
 printJS t = wrap t . runPrinter t . fromJS

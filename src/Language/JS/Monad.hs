@@ -2,6 +2,7 @@ module Language.JS.Monad where
 import Control.Monad.State
 import Language.JS.Syntax
 import Haste (JSString)
+import Control.Monad.Cont
 
 data JSEnv = JSEnv
   { jsLocals     :: [Decl]
@@ -24,7 +25,7 @@ emptyEnv startid = JSEnv
   , jsNextId = startid
   }
 
-type JSGen = State JSEnv
+type JSGen = ContT JSEnv (State JSEnv)
 
 addStm :: Stmt -> JSGen ()
 addStm s = modify $ \env -> env {jsStmts = s : jsStmts env}
@@ -83,23 +84,28 @@ addArg arg = modify $ \env -> env {jsArgs = arg : jsArgs env}
 addParam :: Param -> JSGen ()
 addParam p = modify $ \env -> env {jsParams = p : jsParams env}
 
-runJSGen :: ReturnValue a => Integer -> JSGen a -> Func
+runJSGen :: forall a. ReturnValue a => Integer -> JSGen a -> Func
 runJSGen startid m =
-    case runState m (emptyEnv startid) of
-      (x, env) -> mkFunc env x
+    case evalState (runContT m' (const get)) (emptyEnv startid) of
+      env -> mkFunc env
   where
-    ret = maybe [] (:[]) . returnStmt
-    mkFunc env x = Func
+    m' = do
+      x <- m
+      case returnStmt x of
+        Just stm -> stm >>= addFinalStm
+        _        -> return ()
+
+    mkFunc env = Func
       { funParams = reverse $ jsParams env
       , funLocals = reverse $ jsLocals env
-      , funBody   = reverse (ret x ++ jsFinalStmts env ++ jsStmts env)
+      , funBody   = reverse (jsFinalStmts env ++ jsStmts env)
       }
 
-evalJSGen :: Integer -> JSGen a -> a
-evalJSGen startid m = evalState m (emptyEnv startid)
+evalJSGen :: Integer -> ContT a (State JSEnv) a -> a
+evalJSGen startid m = evalState (runContT m return) (emptyEnv startid)
 
 class ReturnValue a where
-  returnStmt :: a -> Maybe Stmt
+  returnStmt :: a -> Maybe (JSGen Stmt)
 
 instance ReturnValue () where
   returnStmt _ = Nothing

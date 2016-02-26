@@ -614,7 +614,6 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
     goWithType (Fun _ f _) args t = do
       args' <- genArgs args
       pure (typed t (JS.Call (S.pack f) args'))
-      where
     goWithType (UOp op) (a :* Nil) t = do
       a' <- compJSExp' a
       pure $ case op of
@@ -633,6 +632,5 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       f' <- compJSExp' f
       pure (c' .? t' $ f')
 
-
 instance JSType a => ReturnValue (CExp a) where
-  returnStmt = Just . Ret . evalJSGen 0 . compJSExp
+  returnStmt x = Just $ Ret <$> compJSExp x
