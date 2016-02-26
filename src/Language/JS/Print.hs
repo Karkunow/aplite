@@ -128,11 +128,16 @@ wrap :: CodeTuning -> JSString -> JSString
 wrap t prog
   | codeStyle t == ASMJS =
     S.concat
-      [ "("
+      [ "(function(){"
+      , "var heap = new ArrayBuffer(", heapsize, ");"
+      , "var f = ("
       , asmModule t memcpyASM prog
       , ")(window, "
       , ffifuns (codeStyle t)
-      , ", new ArrayBuffer(", heapsize, ")).f"
+      , ", heap).f;"
+      , "f.heap = heap;"
+      , "return f;"
+      , "})()"
       ]
   | otherwise =
     S.concat
