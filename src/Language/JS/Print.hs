@@ -100,12 +100,10 @@ finalize_ = ffi "(function(){var r = window.__b.join(''); delete window.__b; ret
 builderref :: IORef Builder
 builderref = veryUnsafePerformIO $ newIORef []
 
-type Builder = IORef [JSString]
+type Builder = [JSString]
 
 push_ :: JSString -> IO ()
-push_ s = do
-  b <- readIORef builderref
-  atomicModifyIORef' b (\ss -> (s:ss, ()))
+push_ s = atomicModifyIORef' builderref (\ss -> (s:ss, ()))
 
 finalize_ :: IO JSString
 finalize_ = S.concat . reverse <$> readIORef builderref
