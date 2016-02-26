@@ -3,11 +3,10 @@ module Language.JS.Print where
 import Language.JS.Syntax hiding (typed)
 import Control.Monad
 import Control.Monad.Cont
-import Data.List
 import Data.IORef
 
 import qualified Haste.JSString as S
-import Haste (JSString, toJSString)
+import Haste (toJSString)
 import Haste.Foreign
 import Haste.Prim
 import Data.IORef
@@ -309,7 +308,9 @@ instance PrintJS Exp where
     | otherwise       = push (toJSString x)
   fromJS (Neg x)      = push "-(" >> fromJS x >> push ")"
   fromJS (Not x)      = push "!(" >> fromJS x >> push ")"
-  fromJS (Cast t x)   = genCast t x
+  fromJS (Cast t x)   = codeStyle . tuning <$> ask >>= \cs -> case cs of
+    ASMJS      -> genCast t x
+    JavaScript -> fromJS x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
   fromJS (Call f as)  = do
     push (toJSString f)
