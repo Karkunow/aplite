@@ -40,7 +40,7 @@ type ApliteExport a =
   )
 
 share :: JSType a => CExp a -> Aplite a
-share x = initRef x >>= getRef
+share x = initRef x >>= unsafeFreezeRef
 
 aplite :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
 aplite t !prog = unIO $! prog'
