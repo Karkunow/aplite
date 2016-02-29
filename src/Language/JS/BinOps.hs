@@ -11,6 +11,10 @@ data BinOp
   | BitAnd | BitOr | BitXor
     deriving (Eq)
 
+-- | May the given operator cause integer overflow or non-integral integers?
+overflowOp :: BinOp -> Bool
+overflowOp op = op `elem` [Add, Sub, Div, Mod]
+
 instance JSType BinOp where
   toJSString Add       = "+"
   toJSString Mul       = "*"

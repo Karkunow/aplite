@@ -302,7 +302,9 @@ instance PrintJS Exp where
   needsParen _       = pure True
 
   fromJS (Id n)       = fromJS n
-  fromJS (Op op a b)  = parenIfNecessary a >> fromJS op >> parenIfNecessary b
+  fromJS (Op op a b)  = codeStyle . tuning <$> ask >>= \cs -> case cs of
+    ASMJS      -> parenIfNecessary a >> fromJS op >> parenIfNecessary b
+    JavaScript -> overflowIfNecessary op a b
   fromJS (Lit x)
     | isIntegral x    = push (toJSString (truncate x :: Int))
     | otherwise       = push (toJSString x)
@@ -321,6 +323,13 @@ instance PrintJS Exp where
     codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS      -> asmIx t arr ix
       JavaScript -> push (S.pack arr) >> push "[" >> fromJS ix >> push "]"
+
+overflowIfNecessary :: BinOp -> Typed Exp -> Typed Exp -> Printer
+overflowIfNecessary op a@(Typed t _) b
+  | t /= Double && overflowOp op = typed t (paren noOverflow)
+  | otherwise                    = noOverflow
+  where
+    noOverflow = parenIfNecessary a >> fromJS op >> parenIfNecessary b
 
 sepBy :: JSString -> [Printer] -> Printer
 sepBy _ []     = return ()
