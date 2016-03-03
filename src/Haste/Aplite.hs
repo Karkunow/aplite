@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns #-}
 module Haste.Aplite
   ( -- * Creating Aplite functions
-    Aplite, ApliteExport, ApliteCMD, aplite, compile
+    Aplite, ApliteProgram, ApliteExport, ApliteCMD, aplite, compile
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
@@ -30,58 +30,108 @@ import Data.Int
 import Data.Word
 import Data.Array.IO
 
+-- | The Aplite monad. All Aplite programs execute in this monad.
 type Aplite a = Program ApliteCMD (CExp a)
 
+-- | The type of an Aplite program: a function in the Aplite monad over an
+--   arbitrary number of Aplite-representable arguments.
+type ApliteProgram a = ApliteSig a (IsPure (RetType a))
+
+-- | A Haskell type which has a corresponding Aplite type. A Haskell type has
+--   a corresponding Aplite type if it is exportable using "Haste.Foreign",
+--   if its parameters return value are all representable in Aplite, and if
+--   all arguments are safe in the context of the return type.
+--   If the return type is @IO a@, then any representable argument is safe.
+--   If the return type is a pure value, then only immutable arguments are
+--   considered safe.
 type ApliteExport a =
-  ( FFI (HaskellSig a)
-  , Export (ApliteSig a)
-  , UnIO (HaskellSig a)
-  , a ~ NoIO (HaskellSig a)
+  ( FFI (FFISig a)
+  , Export (ApliteProgram a)
+  , a ~ NoIO (FFISig a) (IsPure (RetType a))
+  , UnIO (FFISig a) (IsPure (RetType a))
   )
 
+-- | Explicitly share an Aplite expression.
 share :: JSType a => CExp a -> Aplite a
 share x = initRef x >>= unsafeFreezeRef
 
-aplite :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
-aplite t !prog = unIO $! prog'
+aplite :: forall a. ApliteExport a => CodeTuning -> ApliteProgram a -> a
+aplite t !prog = unIO (undefined :: IsPure (RetType a)) $! prog'
   where
-    prog' :: HaskellSig a
+    prog' :: FFISig a
     prog' = ffi $! compile t prog
 
-type family HaskellSig a where
-  HaskellSig (a -> b) = (a -> HaskellSig b)
-  HaskellSig a        = IO a
+-- | Is the given value impure, (an IO computation), or pure (any other value)?
+type family IsPure a where
+  IsPure (IO a) = Impure
+  IsPure a      = Pure
 
-type family ApliteSig a where
-  ApliteSig (a -> b)       = (ApliteArg a -> ApliteSig b)
-  ApliteSig (IOUArray i e) = Program ApliteCMD (Arr i e)
-  ApliteSig a              = Aplite a
+-- | The return type of a function type.
+type family RetType sig where
+  RetType (a -> b) = RetType b
+  RetType a        = a
 
-type family ApliteArg a where
-  ApliteArg Double         = CExp Double
-  ApliteArg Int            = CExp Int32 -- NB: only valid for 32 bit arch!
-  ApliteArg Int32          = CExp Int32
-  ApliteArg Word           = CExp Word32 -- NB: only valid for 32 bit arch!
-  ApliteArg Word32         = CExp Word32
-  ApliteArg Bool           = CExp Bool
-  ApliteArg (IOUArray i e) = Arr i e
+-- | The FFI signature corresponding to the given type signature. Always in the
+--   IO monad due to how Haste.Foreign works.
+type family FFISig a where
+  FFISig (a -> b) = (a -> FFISig b)
+  FFISig (IO a)   = IO a
+  FFISig a        = IO a
 
-type family InterpCMD f where
-  InterpCMD (a -> b) = InterpCMD b
-  InterpCMD a        = a
+-- | The Aplite level signature corresponding to the given Haskell level
+--   signature. Unsafe arguments, such as mutable arrays, may only appear in
+--   @Impure@ aplite signatures, which ensures that side effecting code may
+--   not be unsafely imported.
+type family ApliteSig a p where
+  ApliteSig (a -> b) p       = (ApliteArg a p -> ApliteSig b p)
+  ApliteSig (IOUArray i e) p = Program ApliteCMD (Arr i e)
+  ApliteSig (IO a) p         = Aplite a
+  ApliteSig a p              = Aplite a
 
-class UnIO a where
-  type NoIO a
-  unIO :: a -> NoIO a
+-- | Denotes a pure Aplite signature: the function may not perform side effects
+--   that are observable from Haskell.
+data Pure
 
-instance UnIO (IO a) where
-  type NoIO (IO a) = a
-  unIO = veryUnsafePerformIO
+-- | Denotes an import Aplite signature: the function may perform arbitrary
+--   side effects.
+data Impure
 
-instance UnIO b => UnIO (a -> b) where
-  type NoIO (a -> b) = a -> NoIO b
-  unIO f = \x -> unIO (f x)
+-- | All arguments that can be passed to Aplite functions.
+--   The @p@ parameter denotes the purity of an argument; if @Pure@, unsafe
+--   arguments, such as mutable arrays, will not unify.
+type family ApliteArg a p where
+  ApliteArg Double p              = CExp Double
+  ApliteArg Int p                 = CExp Int32
+  ApliteArg Int32 p               = CExp Int32
+  ApliteArg Word p                = CExp Word32
+  ApliteArg Word32 p              = CExp Word32
+  ApliteArg Bool p                = CExp Bool
+  ApliteArg (IOUArray i e) Impure = Arr i e
 
+-- | If @p@ is @Pure@, converts the given function of the form
+--   @a -> ... -> IO b@ to a function @a -> ... -> b@.
+--   If @p@ is @Impure@, does nothing.
+class UnIO a p where
+  type NoIO a p
+  unIO :: p -> a -> NoIO a p
+
+instance UnIO (IO a) Pure where
+  type NoIO (IO a) Pure = a
+  unIO _ = veryUnsafePerformIO
+
+instance UnIO (IO a) Impure where
+  type NoIO (IO a) Impure = IO a
+  unIO _ = id
+
+instance UnIO b Pure => UnIO (a -> b) Pure where
+  type NoIO (a -> b) Pure = a -> NoIO b Pure
+  unIO p f = \x -> unIO p (f x)
+
+instance UnIO (a -> b) Impure where
+  type NoIO (a -> b) Impure = a -> b
+  unIO _ = id
+
+-- | The Haste-internal name of the ArrayBuffer view for the given type.
 class ArrView a where
   arrView :: a -> JSString
 
