@@ -55,6 +55,28 @@ type ApliteExport a =
 share :: JSType a => CExp a -> Aplite a
 share x = initRef x >>= unsafeFreezeRef
 
+-- | Compile an Aplite function and lift it into Haskell proper.
+--   Aplite functions with no observable side effects may be imported as pure
+--   Haskell functions:
+--
+--     apAdd :: Int32 -> Int32 -> Int32
+--     apAdd = aplite defaultTuning $ \a b -> return (a+b)
+--
+--   They may also be imported as functions in the IO monad:
+--
+--     apAddIO :: Int32 -> Int32 -> IO Int32
+--     apAddIO = aplite defaultTuning $ \a b -> return (a+b)
+--
+--   Functions which may perform observable side effects or have mutable
+--   arguments may only be imported in the IO monad:
+--
+--     memset :: IOUArray Int32 Int32 -> Int32 -> Int32 -> IO Int32
+--     memset = aplite defaultTuning $ \arr len elem ->
+--       for (0, 1, Excl len) $ \i -> do
+--         setArr i elem arr
+--
+--   Note that Aplite functions are monomorphic, as @aplite@ compiles them
+--   to highly specialized, low level JavaScript.
 aplite :: forall a. ApliteExport a => CodeTuning -> ApliteProgram a -> a
 aplite t !prog = unIO (undefined :: IsPure (RetType a)) $! prog'
   where
