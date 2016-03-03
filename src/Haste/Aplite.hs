@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns #-}
 module Haste.Aplite
   ( -- * Creating Aplite functions
-    Aplite, ApliteProgram, ApliteExport, ApliteCMD, aplite, compile
+    Aplite, ApliteProgram, ApliteExport, ApliteSig, ApliteCMD, aplite, compile
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
@@ -31,7 +31,7 @@ import Data.Word
 import Data.Array.IO
 
 -- | The Aplite monad. All Aplite programs execute in this monad.
-type Aplite a = Program ApliteCMD (CExp a)
+type Aplite a = Program ApliteCMD a
 
 -- | The type of an Aplite program: a function in the Aplite monad over an
 --   arbitrary number of Aplite-representable arguments.
@@ -52,7 +52,7 @@ type ApliteExport a =
   )
 
 -- | Explicitly share an Aplite expression.
-share :: JSType a => CExp a -> Aplite a
+share :: (JSType a', a ~ CExp a') => a -> Aplite a
 share x = initRef x >>= unsafeFreezeRef
 
 -- | Compile an Aplite function and lift it into Haskell proper.
@@ -106,9 +106,10 @@ type family FFISig a where
 --   not be unsafely imported.
 type family ApliteSig a p where
   ApliteSig (a -> b) p       = (ApliteArg a p -> ApliteSig b p)
-  ApliteSig (IOUArray i e) p = Program ApliteCMD (Arr i e)
-  ApliteSig (IO a) p         = Aplite a
-  ApliteSig a p              = Aplite a
+  ApliteSig (IOUArray i e) p = Aplite (Arr i e)
+  ApliteSig (IO ()) Impure   = Aplite ()
+  ApliteSig (IO a)  Impure   = Aplite (CExp a)
+  ApliteSig a       Pure     = Aplite (CExp a)
 
 -- | Denotes a pure Aplite signature: the function may not perform side effects
 --   that are observable from Haskell.
