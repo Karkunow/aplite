@@ -376,8 +376,8 @@ instance PrintJS Exp where
   fromJS (Neg x)      = push "-(" >> fromJS x >> push ")"
   fromJS (Not x)      = push "!(" >> fromJS x >> push ")"
   fromJS (Cast t x)   = codeStyle . tuning <$> ask >>= \cs -> case cs of
-    ASMJS      -> genCast t x
-    JavaScript -> fromJS x
+    ASMJS      -> genCastASM t x
+    JavaScript -> genCastJS t x
   fromJS (Cond _ _ _) = error "TODO: ternary operator not supported in asm.js!"
   fromJS (Call f as)  = do
     push (toJSString f)
@@ -422,10 +422,15 @@ heap :: Type -> JSString
 heap Double = "hf"
 heap _      = "hn"
 
-genCast :: Type -> Typed Exp -> Printer
-genCast Signed (Typed Double x)   = push "(~~(" >> fromJS x >> push "))"
-genCast Unsigned (Typed Double x) = push "((~~(" >> fromJS x >> push "))>>>0)"
-genCast _ x                       = fromJS x
+genCastASM :: Type -> Typed Exp -> Printer
+genCastASM Signed (Typed Double x)   = push "(~~(" >> fromJS x >> push "))"
+genCastASM Unsigned (Typed Double x) = push "((~~(" >> fromJS x >> push "))>>>0)"
+genCastASM _ x                       = fromJS x
+
+genCastJS :: Type -> Typed Exp -> Printer
+genCastJS Signed (Typed Double x)   = push "((" >> fromJS x >> push ")|0)"
+genCastJS Unsigned (Typed Double x) = push "((" >> fromJS x >> push ")>>>0)"
+genCastJS _ x                       = fromJS x
 
 isIntegral :: Double -> Bool
 isIntegral x = x == fromIntegral (truncate x :: Int)
