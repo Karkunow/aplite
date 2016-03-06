@@ -71,11 +71,15 @@ wrapped t f@(Func ps ls b) =
   where
     thecode = printJS t f
 
+    -- generate a pointer name if pointer, otherwise use original name
     arr2ptr (Arr _) n = S.append n "_ptr"
     arr2ptr _       n = n
 
+    -- generate names for all pointer args; keep the non-pointer ones
+    -- unmodified
     ptrs = [arr2ptr t n | Param t (MkId n) <- ps]
 
+    -- set up the heap views
     preamble =
       [ "var hn = new Uint32Array(f.heap);\n"
       , "var hf = new Float64Array(f.heap);"
@@ -88,12 +92,16 @@ wrapped t f@(Func ps ls b) =
       ]
       where heap = if sizeof pt == 4 then "hn" else "hf"
 
+    -- copy an array from the ASM.js heap into the array whence the data
+    -- originally came
     copyOut (Param (Arr pt) (MkId arr)) ptr = S.concat
       [arr, ".set(", heap, ".subarray(", ptr, ",", ptr, "+", arr, ".length));"]
       where heap = if sizeof pt == 4 then "hn" else "hf"
 
+    -- all array arguments and their corresponding heap pointers
     arrArgs = [(p, ptr) | (p@(Param (Arr _) _), ptr) <- zip ps ptrs]
 
+    -- the actual wrapper code
     wrapper = S.intercalate "\n"
       [ S.concat preamble
       , S.intercalate "\n" $ map (uncurry mkHeapArr) arrArgs
