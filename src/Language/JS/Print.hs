@@ -59,12 +59,14 @@ wrapped t f@(Func ps ls b) =
   case (explicitHeap t, arrArgs) of
     (Just _, _:_) ->
       S.concat
-        [ "(function w("
+        [ "(function(){\n"
+        , "var f = ", thecode, ";\n"
+        , "return (function("
         , S.intercalate "," $ map (unId . paramName) ps
         , "){\n"
-        , "var f = ", thecode, ";\n"
         , wrapper
-        , "\n})"
+        , "\n});\n"
+        , "})()"
         ]
     _ ->
       thecode
