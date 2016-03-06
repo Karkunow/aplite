@@ -1,7 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Language.JS.Monad where
 import Control.Monad.State
 import Language.JS.Syntax
-import Haste (JSString)
+import Haste (JSString, toJSString)
+import qualified Haste.JSString as S
 import Control.Monad.Cont
 
 data JSEnv = JSEnv
@@ -11,10 +13,10 @@ data JSEnv = JSEnv
   , jsArgs       :: [Typed Exp]
   , jsStmts      :: [Stmt]
   , jsFinalStmts :: [Stmt]
-  , jsNextId     :: Integer
+  , jsNextId     :: Int
   }
 
-emptyEnv :: Integer -> JSEnv
+emptyEnv :: Int -> JSEnv
 emptyEnv startid = JSEnv
   { jsLocals = []
   , jsFFI = []
@@ -37,16 +39,19 @@ addLocal t n =
 addImport :: JSString -> JSGen ()
 addImport f = modify $ \env -> env {jsFFI = f : jsFFI env}
 
-freshId :: JSGen Id
-freshId = do
+freshIdWith :: JSString -> JSGen Id
+freshIdWith prefix = do
   env <- get
   case jsNextId env of
     ident -> do
       put env {jsNextId = succ ident}
-      return (MkId ident)
+      return (MkId (S.append prefix (toJSString ident)))
 
-genIdFor :: String -> JSGen Id
-genIdFor = pure . MkId . read
+freshId :: JSGen Id
+freshId = freshIdWith "v"
+
+genIdFor :: VarId -> JSGen Id
+genIdFor = pure . MkId
 
 addFinalStm :: Stmt -> JSGen ()
 addFinalStm s = modify $ \env -> env {jsFinalStmts = s : jsFinalStmts env}
@@ -84,7 +89,7 @@ addArg arg = modify $ \env -> env {jsArgs = arg : jsArgs env}
 addParam :: Param -> JSGen ()
 addParam p = modify $ \env -> env {jsParams = p : jsParams env}
 
-runJSGen :: forall a. ReturnValue a => Integer -> JSGen a -> Func
+runJSGen :: forall a. ReturnValue a => Int -> JSGen a -> Func
 runJSGen startid m =
     case evalState (runContT m' (const get)) (emptyEnv startid) of
       env -> mkFunc env
@@ -101,7 +106,7 @@ runJSGen startid m =
       , funBody   = reverse (jsFinalStmts env ++ jsStmts env)
       }
 
-evalJSGen :: Integer -> ContT a (State JSEnv) a -> a
+evalJSGen :: Int -> ContT a (State JSEnv) a -> a
 evalJSGen startid m = evalState (runContT m return) (emptyEnv startid)
 
 class ReturnValue a where

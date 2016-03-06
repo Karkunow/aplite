@@ -235,7 +235,7 @@ class PrintJS a where
   fromJS :: a -> Printer
 
 instance PrintJS ArrId where
-  fromJS = push . S.pack
+  fromJS = push
 
 instance PrintJS Param where
   fromJS (Param t n) = do
@@ -244,8 +244,7 @@ instance PrintJS Param where
     typed t (fromJS n)
 
 instance PrintJS Id where
-  fromJS (MkId n)     = push "v" >> push (toJSString n)
-  fromJS (External n) = push (toJSString n)
+  fromJS (MkId n)     = push n
 
 instance PrintJS (Typed Id) where
   needsParen (Typed _ _) = codeStyle . tuning <$> ask >>= \cs -> case cs of
@@ -322,7 +321,7 @@ instance PrintJS Exp where
   fromJS (Index t arr ix) = do
     codeStyle . tuning <$> ask >>= \cs -> case cs of
       ASMJS      -> asmIx t arr ix
-      JavaScript -> push (S.pack arr) >> push "[" >> fromJS ix >> push "]"
+      JavaScript -> push arr >> push "[" >> fromJS ix >> push "]"
 
 overflowIfNecessary :: BinOp -> Typed Exp -> Typed Exp -> Printer
 overflowIfNecessary op a@(Typed t _) b
@@ -339,7 +338,7 @@ asmIx :: Type -> ArrId -> Typed Exp -> Printer
 asmIx t arr ix = do
     push (heap t)
     push "[(("
-    push (S.pack arr)
+    push arr
     push "+("
     fromJS ix
     push "))<<"
@@ -426,7 +425,7 @@ instance PrintJS Stmt where
       ASMJS ->
         asmIx t arr ix >> push " = " >> fromJS x
       JavaScript ->
-        push (S.pack arr) >> push "[" >> fromJS ix >> push "] = " >> fromJS x
+        push arr >> push "[" >> fromJS ix >> push "] = " >> fromJS x
     where t = typeOf x
 
 instance PrintJS Func where

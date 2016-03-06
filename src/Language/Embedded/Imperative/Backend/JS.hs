@@ -22,24 +22,24 @@ compRefCMD cmd@NewRef = do
     t <- compTypePP2 (Proxy :: Proxy exp) cmd
     r <- freshId
     addLocal t r
-    return (RefComp (unId r))
+    return (RefComp $ unId r)
 compRefCMD (InitRef exp) = do
     t <- compType exp
     r <- freshId
     v <- compExp exp
     addLocal t r
     addStm (r := v)
-    return (RefComp (unId r))
+    return (RefComp $ unId r)
 compRefCMD cmd@(GetRef (RefComp ref)) = do
     t <- compTypePP2 (Proxy :: Proxy exp) cmd
     v <- declareNewVar t
     addStm (v := typed t (Id (MkId ref)))
-    return (varExp v)
+    return (varExp $ unId v)
 compRefCMD (SetRef (RefComp ref) exp) = do
     ex <- compExp exp
     addStm (MkId ref := ex)
 compRefCMD (UnsafeFreezeRef (RefComp v)) =
-    return (varExp (MkId v))
+    return (varExp v)
 
 -- | Compile `ArrCMD`
 compArrCMD :: forall exp prog a. (CompJSExp exp, EvalExp exp)
@@ -48,15 +48,15 @@ compArrCMD cmd@(NewArr size) = do
     sym <- genSym "a"
     n   <- compExp size
     t   <- compTypePP2 (Proxy :: Proxy exp) cmd
-    let name = named sym
+    let name = MkId sym
     addLocal (Arr t) name
     addStm (name := newArr t n)
     return $ ArrComp sym
 compArrCMD cmd@(InitArr as) = do
     sym <- genSym "a"
     t   <- compTypePP2 (Proxy :: Proxy exp) cmd
-    as' <- sequence [compExp (litExp a :: exp a') | (a :: a') <- as]
-    let n = named sym
+    as' <- sequence [compExp (valExp a :: exp a') | (a :: a') <- as]
+    let n = MkId sym
     addLocal t n
     addStm (n := newArr t (toTypedExp $ length as))
     forM_ (zip [0 :: Int ..] as') $ \(i, x) ->
@@ -67,7 +67,7 @@ compArrCMD (GetArr expi a@(ArrComp arr)) = do
     n <- declareNewVar t
     i <- compExp expi
     addStm (n := typed t (Index t arr i))
-    return (varExp n)
+    return (varExp $ unId n)
 compArrCMD (SetArr expi expv (ArrComp arr)) = do
     v <- compExp expv
     i <- compExp expi
@@ -77,8 +77,8 @@ compArrCMD (CopyArr a@(ArrComp arr1) (ArrComp arr2) expl) = do
     t <- compTypePP (Proxy :: Proxy exp) a
     let at = Arr t
     -- TODO: this gives length in elements, not in bytes
-    addStm (ExpStm $ Typed t $ Call "memcpy" [ typed at (Id $ named arr1)
-                                             , typed at (Id $ named arr2)
+    addStm (ExpStm $ Typed t $ Call "memcpy" [ typed at (Id $ MkId arr1)
+                                             , typed at (Id $ MkId arr2)
                                              , toTypedExp (sizeof t)
                                              , l
                                              ])
@@ -116,7 +116,7 @@ compControlCMD (CMD.For (lo,step,hi) body) = do
     loe   <- compExp lo
     hie   <- compExp $ borderVal hi
     (i,n) <- declareNew (typeOf loe)
-    (_, bodyc) <- inBlock (body (varExp n))
+    (_, bodyc) <- inBlock (body (varExp $ unId n))
     let incl = borderIncl hi
         step' = sameTypeAs loe (toJSExp step)
         negStep' = sameTypeAs loe (toJSExp (negate step))

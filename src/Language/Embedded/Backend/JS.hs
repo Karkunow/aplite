@@ -22,5 +22,5 @@ compile ct f =
     f' = generate startid prog
 
 generate :: (ReturnValue a, Interp instr JSGen, HFunctor instr)
-        => Integer -> Program instr a -> Func
+        => Int -> Program instr a -> Func
 generate startid = runJSGen startid . interpret

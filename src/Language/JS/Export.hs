@@ -7,9 +7,11 @@ import Language.JS.CompExp
 import Language.JS.Expression hiding (Fun)
 import Language.JS.Syntax
 import Language.JS.Monad
+import Haste (toJSString)
+import qualified Haste.JSString as S
 
 data Fun a = Fun
-  { cgStartId    :: Integer
+  { cgStartId    :: Int
   , expFunParams :: [Param]
   , expFunBody   :: Program ApliteCMD a
   }
@@ -21,27 +23,28 @@ type family RetVal a where
   RetVal a        = IO a
 
 instance JSType e => ReturnValue (Arr i e) where
-  returnStmt (ArrComp a) = Just . pure . Ret . typed t . Id . named $ a
+  returnStmt (ArrComp a) = Just . pure . Ret . typed t . Id . MkId $ a
     where t = Arr (jsType (undefined :: CExp e))
 
 class ReturnValue (Res f) => Export f where
   type Res f
   type ExportSig f
-  mkFun :: Integer -> [Param] -> f -> Fun (Res f)
+  mkFun :: Int -> [Param] -> f -> Fun (Res f)
 
 instance (JSType a, Export b) => Export (CExp a -> b) where
   type Res (CExp a -> b) = Res b
   type ExportSig (CExp a -> b) = a -> ExportSig b
-  mkFun n as f = mkFun (succ n) (param t (MkId n) : as) (f argexp)
-    where t = jsType (undefined :: CExp a)
-          argexp = varExp (MkId n)
+  mkFun n as f = mkFun (succ n) (param t (MkId n') : as) (f argexp)
+    where n' = S.cons 'n' (toJSString n)
+          t = jsType (undefined :: CExp a)
+          argexp = varExp n'
 
 instance (JSType i, JSType e, Export b) => Export (Arr i e -> b) where
   type Res (Arr i e -> b) = Res b
   type ExportSig (Arr i e -> b) = IArr i e -> ExportSig b
-  mkFun n as f = mkFun (succ n) (param t (named name) : as) (f argexp)
+  mkFun n as f = mkFun (succ n) (param t (MkId name) : as) (f argexp)
     where t = Arr (jsType (undefined :: CExp e))
-          name = 'a':show n
+          name = S.cons 'a' (toJSString n)
           argexp = ArrComp name
 
 instance ReturnValue a => Export (Program ApliteCMD a) where

@@ -44,15 +44,15 @@ library
     Language.Embedded.Imperative.Frontend
     Language.Embedded.Imperative
     Language.Embedded.Backend.JS
+    Language.JS.Expression
+    Language.Embedded.Expression
 
   other-modules:
     Language.Embedded.Imperative.Backend.JS
-    Language.Embedded.Expression
     Language.JS.Monad
     Language.JS.Syntax
     Language.JS.CompExp
     Language.JS.Print
-    Language.JS.Expression
     Language.JS.Export
     Language.JS.BinOps
       -- No need to export these since only the instances are interesting

@@ -176,7 +176,7 @@ data Sym sig
     -- Conditional
     Cond  :: Sym (Bool :-> a :-> a :-> Full a)
     -- Variable (only for compilation)
-    Var   :: String -> Sym (Full a)
+    Var   :: VarId -> Sym (Full a)
     -- Unsafe array indexing
 --    ArrIx :: (Integral i, Ix i) => IArr i a -> Sym (i :-> Full a)
 
@@ -193,8 +193,6 @@ instance Syntactic (CExp a)
     type Internal (CExp a) = a
     desugar = unCExp
     sugar   = CExp
-
-type instance VarPred CExp = JSType
 
 evalSym :: Sym sig -> Denotation sig
 evalSym (Lit _ a)     = a
@@ -215,7 +213,7 @@ evalSym (ArrIx (IArrEval arr)) = \i ->
   where
     (l,h) = bounds arr
 -}
-evalSym (Var v) = error $ "evalCExp: cannot evaluate variable " ++ v
+evalSym (Var v) = error $ "evalCExp: cannot evaluate variable " ++ S.unpack v
 
 -- | Evaluate an expression
 evalCExp :: CExp a -> a
@@ -227,15 +225,18 @@ evalCExp (CExp e) = go e
 
 instance EvalExp CExp
   where
-    litExp a = CExp $ Sym $ T $ Lit (show a) a
     evalExp  = evalCExp
 
 instance CompJSExp CExp
   where
-    varExp   = CExp . Sym . T . Var . showVar
-      where showVar (MkId v) = show v
     compExp  = compJSExp
     compType = pure . jsType
+
+instance FreeExp CExp
+  where
+    type VarPred CExp = JSType
+    valExp a = CExp $ Sym $ T $ Lit (show a) a
+    varExp   = CExp . Sym . T . Var
 
 -- | One-level constant folding: if all immediate sub-expressions are literals,
 -- the expression is reduced to a single literal
@@ -292,7 +293,7 @@ constant :: JSType a
 constant incls const val = CExp $ Sym $ T $ Const incls const val
 
 -- | Create a named variable
-variable :: JSType a => String -> CExp a
+variable :: JSType a => VarId -> CExp a
 variable = CExp . Sym . T . Var
 
 true, false :: CExp Bool
@@ -511,7 +512,7 @@ instance Render Sym
     renderSym (UOp UnNot)    = show Not
     renderSym (Op op)        = show $ binaryOp op
     renderSym (Cast _)       = "cast"
-    renderSym (Var v)        = v
+    renderSym (Var v)        = S.unpack v
     renderArgs = renderArgsSmart
 
 instance Equality Sym

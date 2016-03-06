@@ -1,19 +1,16 @@
 
 {-# LANGUAGE TypeFamilies #-}
 module Language.JS.CompExp
-  ( VarPred, EvalExp (..)
-  , CompJSExp (..)
+  ( EvalExp (..)
+  , CompJSExp (..), FreeExp (..)
   , declareNew, declareNewVar, genVar, genSym
   ) where
 import Data.Proxy
-import Data.Constraint
 import Language.JS.Syntax
 import Language.JS.Monad
-import Language.Embedded.Expression (EvalExp (..), VarPred)
+import Language.Embedded.Expression (EvalExp (..), FreeExp (..))
 
-class CompJSExp exp where
-  varExp    :: VarPred exp a => Id -> exp a
-  
+class FreeExp exp => CompJSExp exp where
   compExp   :: exp a -> JSGen (Typed Exp)
   
   -- | Extract expression type
@@ -56,8 +53,8 @@ declareNewVar :: Type -> JSGen Id
 declareNewVar = fmap snd . declareNew
 
 -- | Generate a variable from a source language name.
-genVar :: Type -> String -> JSGen (Typed Exp)
+genVar :: Type -> VarId -> JSGen (Typed Exp)
 genVar t = fmap (typed t . Id) . genIdFor
 
-genSym :: String -> JSGen String
-genSym s = ((s ++) . show . unId) <$> freshId
+genSym :: VarId -> JSGen VarId
+genSym = fmap unId . freshIdWith

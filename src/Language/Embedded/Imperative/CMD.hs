@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, OverloadedStrings #-}
 
 -- | Imperative commands. These commands can be used with the 'Program' monad,
 -- and different command types can be combined using (':+:').
@@ -70,7 +70,7 @@ import Language.Embedded.Expression
 import Language.Embedded.Traversal
 import Language.JS.Monad
 import Language.JS.CompExp
-import Language.JS.Syntax (ToIdent (..), VarId)
+import Language.JS.Syntax (ToIdent (..))
 import qualified Language.JS.Syntax as JS
 
 
@@ -89,7 +89,7 @@ data Ref a
 
 instance ToIdent (Ref a)
   where
-    toIdent (RefComp r) = JS.External $ S.pack ('v' : show r)
+    toIdent (RefComp r) = JS.MkId r
 
 -- | Commands for mutable references
 data RefCMD exp (prog :: * -> *) a
@@ -122,7 +122,7 @@ instance CompJSExp exp => DryInterp (RefCMD exp)
     dryInterp (InitRef _)  = liftM RefComp fresh
     dryInterp (GetRef _)   = liftM varExp fresh
     dryInterp (SetRef _ _) = return ()
-    dryInterp (UnsafeFreezeRef (RefComp v)) = return $ varExp (JS.MkId v)
+    dryInterp (UnsafeFreezeRef (RefComp v)) = return $ varExp v
 
 type instance IExp (RefCMD e)       = e
 type instance IExp (RefCMD e :+: i) = e
@@ -135,14 +135,14 @@ type instance IExp (RefCMD e :+: i) = e
 
 -- | Mutable array
 data Arr i a
-    = ArrComp String
+    = ArrComp VarId
     | ArrEval (IORef (IOArray i a))
         -- The `IORef` is needed in order to make the `IsPointer` instance
   deriving Typeable
 
 -- | Immutable array
 data IArr i a
-    = IArrComp String
+    = IArrComp VarId
     | IArrEval (Array i a)
         -- The `IORef` is needed in order to make the `IsPointer` instance
   deriving Typeable
@@ -165,11 +165,11 @@ data IArr i a
 
 instance ToIdent (Arr i a)
   where
-    toIdent (ArrComp arr) = JS.External (S.pack arr)
+    toIdent (ArrComp arr) = JS.MkId arr
 
 instance ToIdent (IArr i a)
   where
-    toIdent (IArrComp arr) = JS.External (S.pack arr)
+    toIdent (IArrComp arr) = JS.MkId arr
 
 -- | Commands for mutable arrays
 data ArrCMD exp (prog :: * -> *) a
@@ -198,8 +198,8 @@ instance HFunctor (ArrCMD exp)
     hfmap _ (UnsafeThawArr arr)   = UnsafeThawArr arr
 instance CompJSExp exp => DryInterp (ArrCMD exp)
   where
-    dryInterp (NewArr _)      = liftM ArrComp $ freshStr "a"
-    dryInterp (InitArr _)     = liftM ArrComp $ freshStr "a"
+    dryInterp (NewArr _)      = liftM ArrComp $ freshStr ("a" :: VarId)
+    dryInterp (InitArr _)     = liftM ArrComp $ freshStr ("a" :: VarId)
     dryInterp (GetArr _ _)    = liftM varExp fresh
     dryInterp (SetArr _ _ _)  = return ()
     dryInterp (CopyArr _ _ _) = return ()
@@ -314,13 +314,13 @@ instance DryInterp PtrCMD
 
 -- | File handle
 data Handle
-    = HandleComp String
+    = HandleComp VarId
     | HandleEval IO.Handle
   deriving Typeable
 
 instance ToIdent Handle
   where
-    toIdent (HandleComp h) = JS.External (S.pack h)
+    toIdent (HandleComp h) = JS.MkId h
 
 -- | Handle to stdin
 stdin :: Handle
@@ -369,7 +369,7 @@ instance HFunctor (FileCMD exp)
 
 instance CompJSExp exp => DryInterp (FileCMD exp)
   where
-    dryInterp (FOpen _ _)     = liftM HandleComp $ freshStr "h"
+    dryInterp (FOpen _ _)     = liftM HandleComp $ freshStr ("h" :: String)
     dryInterp (FClose _)      = return ()
     dryInterp (FPrintf _ _ _) = return ()
     dryInterp (FGet _)        = liftM varExp fresh
@@ -390,7 +390,7 @@ newtype Ptr a = PtrComp {ptrId :: String}
 
 instance ToIdent (Ptr a)
   where
-    toIdent = JS.External . S.pack . ptrId
+    toIdent = JS.MkId . S.pack . ptrId
 
 -- | Abstract object
 data Object = Object
@@ -402,7 +402,7 @@ data Object = Object
 
 instance ToIdent Object
   where
-    toIdent (Object _ _ o) = JS.External (S.pack o)
+    toIdent (Object _ _ o) = JS.MkId (S.pack o)
 
 data FunArg exp where
   FunArg :: Arg arg => arg exp -> FunArg exp
@@ -475,9 +475,9 @@ instance HFunctor (C_CMD exp)
 
 instance CompJSExp exp => DryInterp (C_CMD exp)
   where
-    dryInterp NewPtr                 = liftM PtrComp $ freshStr "p"
-    dryInterp (PtrToArr (PtrComp p)) = return $ ArrComp p
-    dryInterp (NewObject t p)        = liftM (Object p t) $ freshStr "obj"
+    dryInterp NewPtr                 = liftM PtrComp $ freshStr ("p" :: String)
+    dryInterp (PtrToArr (PtrComp p)) = return $ ArrComp (S.pack p)
+    dryInterp (NewObject t p)        = liftM (Object p t) $ freshStr ("obj" :: String)
     dryInterp (AddInclude _)         = return ()
 --    dryInterp (AddDefinition _)      = return ()
     dryInterp (AddExternFun _ _ _)   = return ()
@@ -498,7 +498,7 @@ runRefCMD :: forall exp prog a . EvalExp exp => RefCMD exp prog a -> IO a
 runRefCMD (InitRef a)                       = fmap RefEval $ newIORef $ evalExp a
 runRefCMD NewRef                            = fmap RefEval $ newIORef $ error "reading uninitialized reference"
 runRefCMD (SetRef (RefEval r) a)            = writeIORef r $ evalExp a
-runRefCMD (GetRef (RefEval (r :: IORef b))) = fmap litExp $ readIORef r
+runRefCMD (GetRef (RefEval (r :: IORef b))) = fmap valExp $ readIORef r
 runRefCMD (UnsafeFreezeRef r)               = runRefCMD (GetRef r)
 
 runArrCMD :: EvalExp exp => ArrCMD exp prog a -> IO a
@@ -513,7 +513,7 @@ runArrCMD (GetArr i (ArrEval arr)) = do
                 ++ show (toInteger i')
                 ++ " out of bounds "
                 ++ show (toInteger l, toInteger h)
-      else fmap litExp $ readArray arr' i'
+      else fmap valExp $ readArray arr' i'
 runArrCMD (SetArr i a (ArrEval arr)) = do
     arr'  <- readIORef arr
     let i' = evalExp i
@@ -565,7 +565,7 @@ runControlCMD (For (lo,step,hi) body) = loop (evalExp lo)
       | step >= 0         = i <  hi'
       | step < 0          = i >  hi'
     loop i
-      | cont i    = body (litExp i) >> loop (i + fromIntegral step)
+      | cont i    = body (valExp i) >> loop (i + fromIntegral step)
       | otherwise = return ()
 runControlCMD Break = error "cannot run programs involving break"
 runControlCMD (Assert cond msg) = unless (evalExp cond) $ error $
@@ -606,9 +606,9 @@ runFileCMD (FPrintf h format as)          = evalFPrintf as (Printf.hPrintf (eval
 runFileCMD (FGet h)   = do
     w <- readWord $ evalHandle h
     case reads w of
-        [(f,"")] -> return $ litExp f
+        [(f,"")] -> return $ valExp f
         _        -> error $ "fget: no parse (input " ++ show w ++ ")"
-runFileCMD (FEof h) = fmap litExp $ IO.hIsEOF $ evalHandle h
+runFileCMD (FEof h) = fmap valExp $ IO.hIsEOF $ evalHandle h
 
 runC_CMD :: C_CMD exp IO a -> IO a
 runC_CMD NewPtr               = error "cannot run programs involving newPtr"

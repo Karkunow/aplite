@@ -77,8 +77,8 @@ unsafeFreezeRef = singleE . UnsafeFreezeRef
 -- <http://fun-discoveries.blogspot.se/2015/09/strictness-can-fix-non-termination.html>
 veryUnsafeFreezeRef :: (VarPred exp a, EvalExp exp, CompJSExp exp) =>
     Ref a -> exp a
-veryUnsafeFreezeRef (RefEval r) = litExp $! unsafePerformIO $! readIORef r
-veryUnsafeFreezeRef (RefComp v) = varExp (JS.MkId v)
+veryUnsafeFreezeRef (RefEval r) = valExp $! unsafePerformIO $! readIORef r
+veryUnsafeFreezeRef (RefComp v) = varExp v
 
 
 

@@ -4,7 +4,7 @@
 module Language.JS.Syntax
   ( module Language.JS.BinOps
   , ToJSExp (..), ToIdent (..), toTypedExp, sizeof
-  , Type (..), Param (..), Typed (..), isPtrTy, named, typed, param, newArr
+  , Type (..), Param (..), Typed (..), isPtrTy, typed, param, newArr
   , Func (..), Id (..), Decl (..), VarId, ArrId
   , Exp (..), Stmt (..)
   , StdFun, stdFunName, std_funs, callStdFun
@@ -19,6 +19,7 @@ import Language.JS.BinOps
 import Data.Int
 import Data.Word
 import Haste hiding (fromString)
+import qualified Haste.JSString as S
 import Data.String
 
 class ToJSExp a where
@@ -72,18 +73,16 @@ isPtrTy _       = False
 class ToIdent a where
   toIdent :: a -> Id
 
-type VarId = Integer
+type VarId = JSString
+type ArrId = VarId
 
 -- | A JavaScript identifier.
-data Id
-  = MkId     {unId :: !VarId}
-  | External {unExternal :: !JSString}
-    deriving (Show, Eq)
+newtype Id
+  = MkId {unId :: VarId}
+    deriving Eq
 
-named :: String -> Id
-named = External . fromString
-
-type ArrId = String
+instance Show Id where
+  show (MkId x) = S.unpack x
 
 -- | An untyped JavaScript expression with typed subexpressions.
 data Exp
