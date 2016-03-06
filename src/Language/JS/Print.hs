@@ -50,6 +50,57 @@ headerDeclStr StrictHeader = "\"use strict\";"
 headerDeclStr ASMHeader    = "\"use asm\";"
 headerDeclStr NoHeader     = ""
 
+-- | The function's wrapper: if present, the Aplite function will be
+--   wrapped in another function, which is responsible for performing any
+--   needed setup, calling the Aplite function, performing cleanup, and
+--   returning the return value of the Aplite function.
+wrapped :: CodeTuning -> Func -> JSString
+wrapped t f@(Func ps ls b) =
+  case (explicitHeap t, arrArgs) of
+    (Just _, _:_) ->
+      S.concat
+        [ "(function w("
+        , S.intercalate "," $ map (unId . paramName) ps
+        , "){\n"
+        , "var f = ", thecode, ";\n"
+        , wrapper
+        , "\n})"
+        ]
+    _ ->
+      thecode
+  where
+    thecode = printJS t f
+
+    arr2ptr (Arr _) n = S.append n "_ptr"
+    arr2ptr _       n = n
+
+    ptrs = [arr2ptr t n | Param t (MkId n) <- ps]
+
+    preamble =
+      [ "var hn = new Uint32Array(f.heap);\n"
+      , "var hf = new Float64Array(f.heap);"
+      ]
+
+    -- declare an array in the ASM.js heap and copy the source array into it
+    mkHeapArr (Param (Arr pt) (MkId arr)) ptr = S.concat
+      [ "var ", ptr, "=f.malloc(",toJSString (sizeof pt),",",arr,".length);\n"
+      , heap, ".set(", arr, ",", ptr, ");"
+      ]
+      where heap = if sizeof pt == 4 then "hn" else "hf"
+
+    copyOut (Param (Arr pt) (MkId arr)) ptr = S.concat
+      [arr, ".set(", heap, ".subarray(", ptr, ",", ptr, "+", arr, ".length));"]
+      where heap = if sizeof pt == 4 then "hn" else "hf"
+
+    arrArgs = [(p, ptr) | (p@(Param (Arr _) _), ptr) <- zip ps ptrs]
+
+    wrapper = S.intercalate "\n"
+      [ S.concat preamble
+      , S.intercalate "\n" $ map (uncurry mkHeapArr) arrArgs
+      , S.concat ["var result = f(", S.intercalate "," ptrs, ");"]
+      , S.intercalate "\n" $ map (uncurry copyOut) arrArgs
+      ]
+
 data PrintEnv = PrintEnv
   { indent  :: !JSString
   , tuning  :: !CodeTuning
@@ -125,15 +176,17 @@ wrap :: CodeTuning -> JSString -> JSString
 wrap t prog
   | codeStyle t == ASMJS =
     S.concat
-      [ "(function(){"
-      , "var heap = new ArrayBuffer(", heapsize, ");"
+      [ "(function(){\n"
+      , "var heap = new ArrayBuffer(", heapsize, ");\n"
+      , "var malloc = ", mallocASM, ";\n"
       , "var f = ("
       , asmModule t memcpyASM prog
       , ")(window, "
       , ffifuns (codeStyle t)
-      , ", heap).f;"
-      , "f.heap = heap;"
-      , "return f;"
+      , ", heap).f;\n"
+      , "f.heap = heap;\n"
+      , "f.malloc = malloc;\n"
+      , "return f;\n"
       , "})()"
       ]
   | otherwise =
@@ -144,19 +197,20 @@ wrap t prog
       ]
   where
     heapsize = maybe "0" toJSString (explicitHeap t)
-    ffifuns ASMJS      = S.concat [ "{ malloc:", mallocASM
+    ffifuns ASMJS      = S.concat [ "{ malloc: malloc"
                                   , "}"]
     ffifuns JavaScript = S.concat [ "{ malloc:", mallocJS
                                   , ", memcpy:", memcpyJS
                                   , "}"]
-    mallocASM = "function mallocASM(sz, len) {\
-        if(typeof mallocASM.next_addr === 'undefined') {\
-          mallocASM.next_addr = 0;\
+    -- malloc takes an element size and a # of elements to allocate
+    mallocASM = "function malloc(sz, len) {\
+        if(typeof malloc.next_addr === 'undefined') {\
+          malloc.next_addr = 0;\
         }\
-        var ptr = mallocASM.next_addr/sz;\
+        var ptr = malloc.next_addr/sz;\
         var bytes = len*sz;\
         bytes += (8 - (bytes % 8)) % 8;\
-        mallocASM.next_addr += bytes;\
+        malloc.next_addr += bytes;\
         return ptr;\
       }"
     mallocJS = "function mallocJS(sz, len) {\
@@ -337,11 +391,11 @@ sepBy s (p:ps) = p >> when (not $ null ps) (push s) >> sepBy s ps
 asmIx :: Type -> ArrId -> Typed Exp -> Printer
 asmIx t arr ix = do
     push (heap t)
-    push "[(("
+    push "[("
     push arr
     push "+("
     fromJS ix
-    push "))<<"
+    push ")<<"
     pushShift
     push ")>>"
     pushShift

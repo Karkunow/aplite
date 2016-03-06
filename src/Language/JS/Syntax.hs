@@ -216,9 +216,12 @@ data Stmt
   | Write    !ArrId !(Typed Exp) !(Typed Exp)
 
 data Func = Func
-  { funParams :: ![Param]
-  , funLocals :: ![Decl]
-  , funBody   :: ![Stmt]
+  { -- | The function's parameters.
+    funParams   :: ![Param]
+    -- | All local variables used in the function.
+  , funLocals   :: ![Decl]
+    -- | The function's body.
+  , funBody     :: ![Stmt]
   }
 
 jsNull :: Typed Exp

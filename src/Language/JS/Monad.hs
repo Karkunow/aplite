@@ -101,9 +101,9 @@ runJSGen startid m =
         _        -> return ()
 
     mkFunc env = Func
-      { funParams = reverse $ jsParams env
-      , funLocals = reverse $ jsLocals env
-      , funBody   = reverse (jsFinalStmts env ++ jsStmts env)
+      { funParams  = reverse $ jsParams env
+      , funLocals  = reverse $ jsLocals env
+      , funBody    = reverse (jsFinalStmts env ++ jsStmts env)
       }
 
 evalJSGen :: Int -> ContT a (State JSEnv) a -> a

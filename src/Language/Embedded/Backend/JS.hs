@@ -16,7 +16,7 @@ import Language.Embedded.Imperative
 
 compile :: Export a => CodeTuning -> a -> JSString
 compile ct f =
-    printJS ct $ f' {funParams = params}
+    wrapped ct $ f' {funParams = params}
   where
     Fun startid params prog = mkFun 0 [] f
     f' = generate startid prog
