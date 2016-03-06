@@ -56,8 +56,8 @@ headerDeclStr NoHeader     = ""
 --   returning the return value of the Aplite function.
 wrapped :: CodeTuning -> Func -> JSString
 wrapped t f@(Func ps ls b) =
-  case (explicitHeap t, arrArgs) of
-    (Just _, _:_) ->
+  case explicitHeap t of
+    Just _ ->
       S.concat
         [ "(function(){\n"
         , "var f = ", thecode, ";\n"
@@ -109,6 +109,8 @@ wrapped t f@(Func ps ls b) =
       , S.intercalate "\n" $ map (uncurry mkHeapArr) arrArgs
       , S.concat ["var result = f(", S.intercalate "," ptrs, ");"]
       , S.intercalate "\n" $ map (uncurry copyOut) arrArgs
+      , "f.malloc.next_addr = 0;"
+      , "return result;"
       ]
 
 data PrintEnv = PrintEnv
