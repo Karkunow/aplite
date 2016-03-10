@@ -179,7 +179,7 @@ data Decl = Decl
 -- | A standard library function.
 newtype StdFun = StdFun {stdFunName :: JSString}
 
-std_floor, std_ceiling, std_sqrt, std_imul, std_pow,
+std_floor, std_ceiling, std_sqrt, std_imul, std_pow, std_abs, std_signum,
   std_cos, std_sin, std_tan, std_atan2 :: StdFun
 std_floor    = StdFun "floor"
 std_ceiling  = StdFun "ceil"
@@ -190,12 +190,14 @@ std_cos      = StdFun "cos"
 std_sin      = StdFun "sin"
 std_tan      = StdFun "tan"
 std_atan2    = StdFun "atan2"
+std_abs      = StdFun "abs"
+std_signum   = StdFun "sign"
 
 -- | All available standard library functions.
 std_funs :: [StdFun]
 std_funs =
-  [ std_floor, std_ceiling, std_sqrt, std_imul
-  , std_pow, std_cos, std_sin, std_tan
+  [ std_floor, std_ceiling, std_sqrt, std_imul, std_pow, std_abs, std_signum
+  , std_cos, std_sin, std_tan
   ]
 
 -- | A typed JavaScript statement.

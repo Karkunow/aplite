@@ -336,8 +336,8 @@ instance (Num a, Ord a, JSType a) => Num (CExp a)
       -- in multiplications
     negate a = constFold $ sugarSym (T $ UOp UnNeg) a
 
-    abs    = error "abs not implemented for CExp"
-    signum = error "signum not implemented for CExp"
+    abs    = constFold . sugarSym (T $ Fun ["<math.h>"] "abs" abs)
+    signum = constFold . sugarSym (T $ Fun ["<math.h>"] "sign" signum)
 
 instance (Ord a, Num a, JSType a, Bits a) => Bits (CExp a) where
   a .&. b        = constFold $ sugarSym (T $ Op BiBitAnd) a b
