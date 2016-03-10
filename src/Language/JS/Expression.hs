@@ -393,6 +393,9 @@ floor_ = constFold . sugarSym (T $ Fun ["<math.h>"] "floor" (fromInteger . floor
 ceiling_ :: (RealFrac a, JSType a) => CExp a -> CExp a
 ceiling_ = constFold . sugarSym (T $ Fun ["<math.h>"] "ceiling" (fromInteger . ceiling))
 
+sqrt_ :: (Floating a, JSType a) => CExp a -> CExp a
+sqrt_ = constFold . sugarSym (T $ Fun ["<math.h>"] "sqrt" sqrt)
+
 f2n :: (RealFrac a, Num b, JSType b) => CExp a -> CExp b
 f2n a = constFold $ sugarSym (T $ Cast (fromInteger . truncate)) a
 
