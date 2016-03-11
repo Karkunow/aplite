@@ -6,7 +6,7 @@ module Haste.Aplite
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
   , CExp, ArrView
-  , Bits (..)
+  , Bits (..), shiftRL
   , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
   , fmod, sqrt_, quot_, round_, floor_, ceiling_, i2n, i2b, f2n, (#%), share
 -- not supported yet!  , cond, (?), (#!)

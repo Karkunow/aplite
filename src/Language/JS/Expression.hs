@@ -92,26 +92,27 @@ evalUnary UnNot = not
 
 data Binary a
   where
-    BiAdd    :: Num a              => Binary (a -> a -> a)
-    BiSub    :: Num a              => Binary (a -> a -> a)
-    BiMul    :: Num a              => Binary (a -> a -> a)
-    BiDiv    :: Fractional a       => Binary (a -> a -> a)
-    BiFmod   :: RealFrac a         => Binary (a -> a -> a)
-    BiQuot   :: Integral a         => Binary (a -> a -> a)
-    BiRem    :: Integral a         => Binary (a -> a -> a)
-    BiAnd    ::                       Binary (Bool -> Bool -> Bool)
-    BiOr     ::                       Binary (Bool -> Bool -> Bool)
-    BiEq     :: JSType a           => Binary (a -> a -> Bool)
-    BiNEq    :: JSType a           => Binary (a -> a -> Bool)
-    BiLt     :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
-    BiGt     :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
-    BiLe     :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
-    BiGe     :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
-    BiBitAnd :: (Bits a, JSType a) => Binary (a -> a -> a)
-    BiBitOr  :: (Bits a, JSType a) => Binary (a -> a -> a)
-    BiBitXor :: (Bits a, JSType a) => Binary (a -> a -> a)
-    BiBitShl :: (Bits a, JSType a) => Binary (a -> Int -> a)
-    BiBitShr :: (Bits a, JSType a) => Binary (a -> Int -> a)
+    BiAdd     :: Num a              => Binary (a -> a -> a)
+    BiSub     :: Num a              => Binary (a -> a -> a)
+    BiMul     :: Num a              => Binary (a -> a -> a)
+    BiDiv     :: Fractional a       => Binary (a -> a -> a)
+    BiFmod    :: RealFrac a         => Binary (a -> a -> a)
+    BiQuot    :: Integral a         => Binary (a -> a -> a)
+    BiRem     :: Integral a         => Binary (a -> a -> a)
+    BiAnd     ::                       Binary (Bool -> Bool -> Bool)
+    BiOr      ::                       Binary (Bool -> Bool -> Bool)
+    BiEq      :: JSType a           => Binary (a -> a -> Bool)
+    BiNEq     :: JSType a           => Binary (a -> a -> Bool)
+    BiLt      :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
+    BiGt      :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
+    BiLe      :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
+    BiGe      :: (Ord a, JSType a)  => Binary (a -> a -> Bool)
+    BiBitAnd  :: (Bits a, JSType a) => Binary (a -> a -> a)
+    BiBitOr   :: (Bits a, JSType a) => Binary (a -> a -> a)
+    BiBitXor  :: (Bits a, JSType a) => Binary (a -> a -> a)
+    BiBitShl  :: (Bits a, JSType a) => Binary (a -> Int -> a)
+    BiBitShr  :: (Bits a, JSType a) => Binary (a -> Int -> a)
+    BiBitShrL :: (Bits a, JSType a) => Binary (a -> Int -> a)
 
 evalBinary :: Binary a -> a
 evalBinary BiAdd    = (+)
@@ -139,26 +140,27 @@ evalFmod :: RealFrac a => a -> a -> a
 evalFmod x y = x - (y * (fromIntegral $ (truncate (x/y) :: Integer)))
 
 binaryOp :: Binary a -> BinOp
-binaryOp BiAdd    = JS.Add
-binaryOp BiSub    = JS.Sub
-binaryOp BiMul    = JS.Mul
-binaryOp BiDiv    = JS.Div
-binaryOp BiFmod   = JS.Mod
-binaryOp BiQuot   = JS.Div
-binaryOp BiRem    = JS.Mod
-binaryOp BiAnd    = JS.And
-binaryOp BiOr     = JS.Or
-binaryOp BiEq     = JS.Eq
-binaryOp BiNEq    = JS.Neq
-binaryOp BiLt     = JS.LT
-binaryOp BiGt     = JS.GT
-binaryOp BiLe     = JS.LTE
-binaryOp BiGe     = JS.GTE
-binaryOp BiBitAnd = JS.BitAnd
-binaryOp BiBitOr  = JS.BitOr
-binaryOp BiBitXor = JS.BitXor
-binaryOp BiBitShl = JS.Shl
-binaryOp BiBitShr = JS.ShrA
+binaryOp BiAdd     = JS.Add
+binaryOp BiSub     = JS.Sub
+binaryOp BiMul     = JS.Mul
+binaryOp BiDiv     = JS.Div
+binaryOp BiFmod    = JS.Mod
+binaryOp BiQuot    = JS.Div
+binaryOp BiRem     = JS.Mod
+binaryOp BiAnd     = JS.And
+binaryOp BiOr      = JS.Or
+binaryOp BiEq      = JS.Eq
+binaryOp BiNEq     = JS.Neq
+binaryOp BiLt      = JS.LT
+binaryOp BiGt      = JS.GT
+binaryOp BiLe      = JS.LTE
+binaryOp BiGe      = JS.GTE
+binaryOp BiBitAnd  = JS.BitAnd
+binaryOp BiBitOr   = JS.BitOr
+binaryOp BiBitXor  = JS.BitXor
+binaryOp BiBitShl  = JS.Shl
+binaryOp BiBitShr  = JS.ShrA
+binaryOp BiBitShrL = JS.ShrL
 
 -- | Syntactic symbols for C
 data Sym sig
@@ -343,7 +345,7 @@ instance (Num a, Ord a, JSType a) => Num (CExp a)
     negate a = constFold $ sugarSym (T $ UOp UnNeg) a
 
     abs    = constFold . sugarSym (T $ Fun ["<math.h>"] "abs" abs)
-    signum = constFold . sugarSym (T $ Fun ["<math.h>"] "sign" signum)
+    signum = error "signum not supported for CExp!" -- constFold . sugarSym (T $ Fun ["<math.h>"] "sign" signum)
 
 instance (Ord a, Num a, JSType a, Bits a) => Bits (CExp a) where
   a .&. b        = constFold $ sugarSym (T $ Op BiBitAnd) a b
@@ -358,6 +360,10 @@ instance (Ord a, Num a, JSType a, Bits a) => Bits (CExp a) where
   testBit _ _    = error "testBit: unsupported"
   popCount _     = error "popCount: unsupported"
   complement     = xor 0xffffffff
+
+shiftRL :: (Ord a, Num a, JSType a, Bits a) => CExp a -> Int -> CExp a
+shiftRL a b =
+  constFold $ sugarSym (T $ Op BiBitShrL) a (fromIntegral b :: CExp Int)
 
 instance (Fractional a, Ord a, JSType a) => Fractional (CExp a)
   where
