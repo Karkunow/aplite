@@ -96,6 +96,7 @@ data Binary a
     BiSub    :: Num a              => Binary (a -> a -> a)
     BiMul    :: Num a              => Binary (a -> a -> a)
     BiDiv    :: Fractional a       => Binary (a -> a -> a)
+    BiFmod   :: RealFrac a         => Binary (a -> a -> a)
     BiQuot   :: Integral a         => Binary (a -> a -> a)
     BiRem    :: Integral a         => Binary (a -> a -> a)
     BiAnd    ::                       Binary (Bool -> Bool -> Bool)
@@ -117,6 +118,7 @@ evalBinary BiAdd    = (+)
 evalBinary BiSub    = (-)
 evalBinary BiMul    = (*)
 evalBinary BiDiv    = (/)
+evalBinary BiFmod   = evalFmod
 evalBinary BiQuot   = quot
 evalBinary BiRem    = rem
 evalBinary BiAnd    = (&&)
@@ -133,11 +135,15 @@ evalBinary BiBitXor = xor
 evalBinary BiBitShl = shiftL
 evalBinary BiBitShr = shiftR
 
+evalFmod :: RealFrac a => a -> a -> a
+evalFmod x y = x - (y * (fromIntegral $ (truncate (x/y) :: Integer)))
+
 binaryOp :: Binary a -> BinOp
 binaryOp BiAdd    = JS.Add
 binaryOp BiSub    = JS.Sub
 binaryOp BiMul    = JS.Mul
 binaryOp BiDiv    = JS.Div
+binaryOp BiFmod   = JS.Mod
 binaryOp BiQuot   = JS.Div
 binaryOp BiRem    = JS.Mod
 binaryOp BiAnd    = JS.And
@@ -383,6 +389,9 @@ LitP 0 #% _          = 0
 _      #% LitP 1     = 0
 a      #% b | a == b = 0
 a      #% b          = constFold $ sugarSym (T $ Op BiRem) a b
+
+fmod :: CExp Double -> CExp Double -> CExp Double
+fmod a b = constFold $ sugarSym (T $ Op BiFmod) a b
 
 round_ :: (RealFrac a, JSType a) => CExp a -> CExp a
 round_ = constFold . sugarSym (T $ Fun ["<math.h>"] "round" (fromInteger . round))
