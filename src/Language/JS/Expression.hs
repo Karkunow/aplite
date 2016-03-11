@@ -364,6 +364,7 @@ instance (Ord a, Num a, JSType a, Bits a) => Bits (CExp a) where
 shiftRL :: (Ord a, Num a, JSType a, Bits a) => CExp a -> Int -> CExp a
 shiftRL a b =
   constFold $ sugarSym (T $ Op BiBitShrL) a (fromIntegral b :: CExp Int)
+infixl 8 `shiftRL`
 
 instance (Fractional a, Ord a, JSType a) => Fractional (CExp a)
   where
