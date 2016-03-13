@@ -105,11 +105,12 @@ type family FFISig a where
 --   @Impure@ aplite signatures, which ensures that side effecting code may
 --   not be unsafely imported.
 type family ApliteSig a p where
-  ApliteSig (a -> b) p       = (ApliteArg a p -> ApliteSig b p)
-  ApliteSig (IOUArray i e) p = Aplite (Arr i e)
-  ApliteSig (IO ()) Impure   = Aplite ()
-  ApliteSig (IO a)  Impure   = Aplite (CExp a)
-  ApliteSig a       Pure     = Aplite (CExp a)
+  ApliteSig (a -> b) p            = (ApliteArg a p -> ApliteSig b p)
+  ApliteSig (IOUArray i e) p      = Aplite (Arr i e)
+  ApliteSig (IO (IOUArray i e)) p = Aplite (Arr i e)
+  ApliteSig (IO ()) Impure        = Aplite ()
+  ApliteSig (IO a)  Impure        = Aplite (CExp a)
+  ApliteSig a       Pure          = Aplite (CExp a)
 
 -- | Denotes a pure Aplite signature: the function may not perform side effects
 --   that are observable from Haskell.
