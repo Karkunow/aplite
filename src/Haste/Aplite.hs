@@ -7,13 +7,15 @@ module Haste.Aplite
     -- * Aplite language stuff
   , CExp, ArrView
   , Bits (..), shiftRL
-  , true, false, not_, (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=)
+  , true, false, not_
+  , (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=), (#!)
   , fmod, sqrt_, quot_, round_, floor_, ceiling_, i2n, i2b, f2n, (#%), share
 -- not supported yet!  , cond, (?), (#!)
   , module Language.Embedded.Imperative
   , module Data.Int
   , module Data.Word
   , module Data.Array.IO
+  , module Data.Array.Unboxed
   ) where
 import Control.Monad.Operational.Higher
 import Language.JS.Print
@@ -29,6 +31,7 @@ import Data.Bits
 import Data.Int
 import Data.Word
 import Data.Array.IO
+import Data.Array.Unboxed
 
 -- | The Aplite monad. All Aplite programs execute in this monad.
 type Aplite a = Program ApliteCMD a
@@ -105,11 +108,15 @@ type family FFISig a where
 --   @Impure@ aplite signatures, which ensures that side effecting code may
 --   not be unsafely imported.
 type family ApliteSig a p where
+  -- Inductive case: convert argument and regurse
   ApliteSig (a -> b) p            = (ApliteArg a p -> ApliteSig b p)
-  ApliteSig (IOUArray i e) p      = Aplite (Arr i e)
+  -- Base cases: valid return types
   ApliteSig (IO (IOUArray i e)) p = Aplite (Arr i e)
+  ApliteSig (IO (UArray i e)) p   = Aplite (IArr i e)
   ApliteSig (IO ()) Impure        = Aplite ()
   ApliteSig (IO a)  Impure        = Aplite (CExp a)
+  ApliteSig (IOUArray i e) p      = Aplite (Arr i e)
+  ApliteSig (UArray i e) p        = Aplite (IArr i e)
   ApliteSig a       Pure          = Aplite (CExp a)
 
 -- | Denotes a pure Aplite signature: the function may not perform side effects
@@ -130,6 +137,7 @@ type family ApliteArg a p where
   ApliteArg Word p                = CExp Word32
   ApliteArg Word32 p              = CExp Word32
   ApliteArg Bool p                = CExp Bool
+  ApliteArg (UArray i e) p        = IArr i e
   ApliteArg (IOUArray i e) Impure = Arr i e
 
 -- | If @p@ is @Pure@, converts the given function of the form
@@ -165,16 +173,30 @@ instance ArrView Int32  where arrView _ = "i32"
 instance ArrView Word   where arrView _ = "w32"
 instance ArrView Word32 where arrView _ = "w32"
 
-instance forall i e. ArrView e => ToAny (IOUArray i e) where
-  toAny x =
-    veryUnsafePerformIO $ uarrToAny (arrView (undefined :: e)) (toOpaque x)
+iouarrToAny :: JSString -> Opaque (IOUArray i e) -> IO JSAny
+iouarrToAny = ffi "(function(v,a){return a.d['v'][v];})"
 
-uarrToAny :: JSString -> Opaque (IOUArray i e) -> IO JSAny
+anyToIOUArr :: JSAny -> IO (Opaque (IOUArray i e))
+anyToIOUArr =
+  ffi "(function(a){return new T4(0,0,a['length']-1,a['length'],wrapByteArr(a['buffer']));})"
+
+uarrToAny :: JSString -> Opaque (UArray i e) -> IO JSAny
 uarrToAny = ffi "(function(v,a){return a.d['v'][v];})"
 
-anyToUArr :: JSAny -> IO (Opaque (IOUArray i e))
+anyToUArr :: JSAny -> IO (Opaque (UArray i e))
 anyToUArr =
-  ffi "(function(a){return new T4(0,0,a['length']-1,0,wrapByteArr(a['buffer']));})"
+  ffi "(function(a){return new T4(0,0,a['length']-1,a['length'],wrapByteArr(a['buffer']));})"
 
 instance forall i e. ArrView e => FromAny (IOUArray i e) where
+  fromAny x = fromOpaque <$> anyToIOUArr x
+
+instance forall i e. ArrView e => ToAny (IOUArray i e) where
+  toAny x =
+    veryUnsafePerformIO $ iouarrToAny (arrView (undefined :: e)) (toOpaque x)
+
+instance forall i e. ArrView e => FromAny (UArray i e) where
   fromAny x = fromOpaque <$> anyToUArr x
+
+instance forall i e. ArrView e => ToAny (UArray i e) where
+  toAny x =
+    veryUnsafePerformIO $ uarrToAny (arrView (undefined :: e)) (toOpaque x)

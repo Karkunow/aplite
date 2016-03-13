@@ -210,6 +210,37 @@ unsafeThawArr
     => IArr i a -> ProgramT instr m (Arr i a)
 unsafeThawArr arr = singleE $ UnsafeThawArr arr
 
+-- | Create and initialize an immutable array from a list
+initIArr
+    :: ( VarPred (IExp instr) a
+       , VarPred (IExp instr) i
+       , Integral i
+       , Ix i
+       , ArrCMD (IExp instr) :<: instr
+       , Monad m
+       )
+    => [a] -> ProgramT instr m (IArr i a)
+initIArr = unsafeFreezeArr <=< initArr
+
+-- | Create and initialize an immutable array from a function over indices.
+initIArrWith
+    :: ( VarPred (IExp instr) a
+       , VarPred (IExp instr) i
+       , Num (IExp instr i)
+       , Integral i
+       , Ix i
+       , ArrCMD (IExp instr) :<: instr
+       , ControlCMD (IExp instr) :<: instr
+       , Monad m
+       )
+    => IExp instr i
+    -> (IExp instr i -> ProgramT instr m (IExp instr a))
+    -> ProgramT instr m (IArr i a)
+initIArrWith len initElem = do
+  arr <- newArr len
+  for (0, 1, Excl len) $ \i -> initElem i >>= setArr arr i
+  unsafeFreezeArr arr
+
 --------------------------------------------------------------------------------
 -- * Control flow
 --------------------------------------------------------------------------------

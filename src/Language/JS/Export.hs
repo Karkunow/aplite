@@ -2,7 +2,7 @@
 -- | Exporting functions from Aplite to Haskell.
 module Language.JS.Export where
 import Language.Embedded.Imperative
-import Language.Embedded.Imperative.CMD (Arr (..))
+import Language.Embedded.Imperative.CMD (Arr (..), IArr (..))
 import Language.JS.CompExp
 import Language.JS.Expression hiding (Fun)
 import Language.JS.Syntax
@@ -22,10 +22,17 @@ type family RetVal a where
   RetVal (CExp a) = IO a
   RetVal a        = IO a
 
+-- ReturnValue instances for arrays
 instance JSType e => ReturnValue (Arr i e) where
   returnStmt (ArrComp a) = Just . pure . Ret . typed t . Id . MkId $ a
     where t = Arr (jsType (undefined :: CExp e))
 
+instance JSType e => ReturnValue (IArr i e) where
+  returnStmt (IArrComp a) = Just . pure . Ret . typed t . Id . MkId $ a
+    where t = Arr (jsType (undefined :: CExp e))
+
+-- Export class + instances: inject arguments into lambda, and marshal them
+-- into JS
 class ReturnValue (Res f) => Export f where
   type Res f
   type ExportSig f

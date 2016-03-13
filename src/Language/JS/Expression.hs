@@ -8,6 +8,7 @@ import Language.Syntactic hiding (Typed)
 import Data.Typeable
 import qualified Haste.JSString as S
 
+import Data.Array
 import Data.Int
 import Data.Word
 import Data.Maybe
@@ -20,6 +21,7 @@ import Language.JS.Syntax hiding (
     Op, Lit, GE, LE, GT, LT, Neq, Eq, Cast, Cond, Fun, typeOf
   )
 import qualified Language.JS.Syntax as JS
+import Language.Embedded.Imperative.CMD (IArr (..))
 
 --------------------------------------------------------------------------------
 -- * Types
@@ -186,7 +188,7 @@ data Sym sig
     -- Variable (only for compilation)
     Var   :: VarId -> Sym (Full a)
     -- Unsafe array indexing
---    ArrIx :: (Integral i, Ix i) => IArr i a -> Sym (i :-> Full a)
+    ArrIx :: (Integral i, Ix i) => IArr i a -> Sym (i :-> Full a)
 
 data T sig
   where
@@ -210,7 +212,6 @@ evalSym (UOp uop)     = evalUnary uop
 evalSym (Op bop)      = evalBinary bop
 evalSym (Cast f)      = f
 evalSym Cond          = \c t f -> if c then t else f
-{-
 evalSym (ArrIx (IArrEval arr)) = \i ->
     if i<l || i>h
       then error $ "index "
@@ -220,7 +221,6 @@ evalSym (ArrIx (IArrEval arr)) = \i ->
       else arr!i
   where
     (l,h) = bounds arr
--}
 evalSym (Var v) = error $ "evalCExp: cannot evaluate variable " ++ S.unpack v
 
 -- | Evaluate an expression
@@ -511,11 +511,9 @@ cond c t f = constFold $ sugarSym (T Cond) c t f
 
 infixl 1 ?
 
-{-
 -- | Array indexing
 (#!) :: (JSType a, Integral i, Ix i) => IArr i a -> CExp i -> CExp a
 arr #! i = sugarSym (T $ ArrIx arr) i
--}
 
 --------------------------------------------------------------------------------
 -- Instances
@@ -651,6 +649,10 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       t' <- compJSExp' t
       f' <- compJSExp' f
       pure (c' .? t' $ f')
+    goWithType s@(ArrIx (IArrComp arr)) (i :* Nil) t = do
+      i' <- compJSExp' i
+      let Arr t' = t
+      pure (typed t (JS.Index t' arr i'))
 
 instance JSType a => ReturnValue (CExp a) where
   returnStmt x = Just $ Ret <$> compJSExp x
