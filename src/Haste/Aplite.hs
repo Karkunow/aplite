@@ -5,7 +5,7 @@ module Haste.Aplite
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
-  , CExp, ArrView
+  , CExp, ArrView, Index, Length
   , Bits (..), shiftRL
   , true, false, not_
   , (#&&), (#||), (#==), (#!=), (#<), (#>), (#<=), (#>=), (#!)
@@ -32,6 +32,9 @@ import Data.Int
 import Data.Word
 import Data.Array.IO
 import Data.Array.Unboxed
+
+type Index = Word32
+type Length = Index
 
 -- | The Aplite monad. All Aplite programs execute in this monad.
 type Aplite a = Program ApliteCMD a
