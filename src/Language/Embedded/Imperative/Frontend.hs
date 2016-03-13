@@ -116,8 +116,8 @@ getArr
        , Ix i
        , ArrCMD (IExp instr) :<: instr
        )
-    => IExp instr i -> Arr i a -> ProgramT instr m (IExp instr a)
-getArr i arr = singleE $ GetArr i arr
+    => Arr i a -> IExp instr i -> ProgramT instr m (IExp instr a)
+getArr arr i = singleE $ GetArr i arr
 
 -- | Set an element of an array
 setArr
@@ -127,8 +127,8 @@ setArr
        , Ix i
        , ArrCMD (IExp instr) :<: instr
        )
-    => IExp instr i -> IExp instr a -> Arr i a -> ProgramT instr m ()
-setArr i a arr = singleE (SetArr i a arr)
+    => Arr i a -> IExp instr i -> IExp instr a -> ProgramT instr m ()
+setArr arr i a = singleE (SetArr i a arr)
 
 -- | Copy the contents of an array to another array. The number of elements to
 -- copy must not be greater than the number of allocated elements in either
