@@ -98,7 +98,8 @@ data Exp
     deriving (Eq, Show)
 
 newArr :: Type -> Typed Exp -> Typed Exp
-newArr t sz = Typed (Arr t) $ Call "malloc" [toTypedExp (sizeof t), sz]
+newArr t (Typed _ sz) =
+  Typed (Arr t) $ Call "malloc" [toTypedExp (sizeof t), Typed Signed sz]
 
 -- | Call a standard library function.
 callStdFun :: StdFun -> [Typed Exp] -> Exp
