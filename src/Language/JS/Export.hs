@@ -18,10 +18,6 @@ data Fun a = Fun
 
 type ApliteCMD = RefCMD CExp :+: ControlCMD CExp :+: ArrCMD CExp
 
-type family RetVal a where
-  RetVal (CExp a) = IO a
-  RetVal a        = IO a
-
 -- ReturnValue instances for arrays
 instance JSType e => ReturnValue (Arr i e) where
   returnStmt (ArrComp a) = Just . pure . Ret . typed t . Id . MkId $ a
