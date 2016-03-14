@@ -1,7 +1,8 @@
-{-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns,
+             UndecidableInstances #-}
 module Haste.Aplite
   ( -- * Creating Aplite functions
-    Aplite, ApliteProgram, ApliteExport, ApliteSig, ApliteCMD
+    Aplite, ApliteExport, ApliteSig, ApliteCMD
   , aplite, apliteWith, compile
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
@@ -40,10 +41,6 @@ type Length = Index
 -- | The Aplite monad. All Aplite programs execute in this monad.
 type Aplite a = Program ApliteCMD a
 
--- | The type of an Aplite program: a function in the Aplite monad over an
---   arbitrary number of Aplite-representable arguments.
-type ApliteProgram a = ApliteSig a (IsPure (RetType a))
-
 -- | A Haskell type which has a corresponding Aplite type. A Haskell type has
 --   a corresponding Aplite type if it is exportable using "Haste.Foreign",
 --   if its parameters return value are all representable in Aplite, and if
@@ -53,9 +50,9 @@ type ApliteProgram a = ApliteSig a (IsPure (RetType a))
 --   considered safe.
 type ApliteExport a =
   ( FFI (FFISig a)
-  , Export (ApliteProgram a)
-  , a ~ NoIO (FFISig a) (IsPure (RetType a))
-  , UnIO (FFISig a) (IsPure (RetType a))
+  , Export (ApliteSig a)
+  , a ~ NoIO (FFISig a) (Purity a)
+  , UnIO (FFISig a) (Purity a)
   )
 
 -- | Explicitly share an Aplite expression.
@@ -63,7 +60,7 @@ share :: (JSType a', a ~ CExp a') => a -> Aplite a
 share x = initRef x >>= unsafeFreezeRef
 
 -- | Compile an aplite function using the default code tuning.
-aplite :: forall a. ApliteExport a => ApliteProgram a -> a
+aplite :: forall a. ApliteExport a => ApliteSig a -> a
 aplite = apliteWith defaultTuning
 
 -- | Compile an Aplite function and lift it into Haskell proper.
@@ -88,21 +85,11 @@ aplite = apliteWith defaultTuning
 --
 --   Note that Aplite functions are monomorphic, as @aplite@ compiles them
 --   to highly specialized, low level JavaScript.
-apliteWith :: forall a. ApliteExport a => CodeTuning -> ApliteProgram a -> a
-apliteWith t !prog = unIO (undefined :: IsPure (RetType a)) $! prog'
+apliteWith :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
+apliteWith t !prog = unIO (undefined :: Purity a) $! prog'
   where
     prog' :: FFISig a
     prog' = ffi $! compile t prog
-
--- | Is the given value impure, (an IO computation), or pure (any other value)?
-type family IsPure a where
-  IsPure (IO a) = Impure
-  IsPure a      = Pure
-
--- | The return type of a function type.
-type family RetType sig where
-  RetType (a -> b) = RetType b
-  RetType a        = a
 
 -- | The FFI signature corresponding to the given type signature. Always in the
 --   IO monad due to how Haste.Foreign works.
@@ -115,17 +102,9 @@ type family FFISig a where
 --   signature. Unsafe arguments, such as mutable arrays, may only appear in
 --   @Impure@ aplite signatures, which ensures that side effecting code may
 --   not be unsafely imported.
-type family ApliteSig a p where
-  -- Inductive case: convert argument and regurse
-  ApliteSig (a -> b) p            = (ApliteArg a p -> ApliteSig b p)
-  -- Base cases: valid return types
-  ApliteSig (IO (IOUArray i e)) p = Aplite (Arr i e)
-  ApliteSig (IO (UArray i e)) p   = Aplite (IArr i e)
-  ApliteSig (IO ()) Impure        = Aplite ()
-  ApliteSig (IO a)  Impure        = Aplite (CExp a)
-  ApliteSig (IOUArray i e) p      = Aplite (Arr i e)
-  ApliteSig (UArray i e) p        = Aplite (IArr i e)
-  ApliteSig a       Pure          = Aplite (CExp a)
+type family ApliteSig a where
+  ApliteSig (a -> b) = (ApliteArg a (Purity b) -> ApliteSig b)
+  ApliteSig a        = ApliteResult a
 
 -- | Denotes a pure Aplite signature: the function may not perform side effects
 --   that are observable from Haskell.
@@ -135,17 +114,33 @@ data Pure
 --   side effects.
 data Impure
 
+-- | Is the given value impure, (an IO computation), or pure (any other value)?
+type family Purity a where
+  Purity (a -> b) = Purity b
+  Purity (IO a)   = Impure
+  Purity a        = Pure
+
+-- | Valid return types for imported Aplite functions.
+type family ApliteResult a where
+  ApliteResult (IO (IOUArray i e)) = Aplite (Arr i e)
+  ApliteResult (IO (UArray i e))   = Aplite (IArr i e)
+  ApliteResult (IO ())             = Aplite ()
+  ApliteResult (IO a)              = Aplite (CExp a)
+  ApliteResult (IOUArray i e)      = Aplite (Arr i e)
+  ApliteResult (UArray i e)        = Aplite (IArr i e)
+  ApliteResult a                   = Aplite (CExp a)
+
 -- | All arguments that can be passed to Aplite functions.
 --   The @p@ parameter denotes the purity of an argument; if @Pure@, unsafe
 --   arguments, such as mutable arrays, will not unify.
 type family ApliteArg a p where
-  ApliteArg Double p              = CExp Double
-  ApliteArg Int p                 = CExp Int32
-  ApliteArg Int32 p               = CExp Int32
-  ApliteArg Word p                = CExp Word32
-  ApliteArg Word32 p              = CExp Word32
-  ApliteArg Bool p                = CExp Bool
-  ApliteArg (UArray i e) p        = IArr i e
+  ApliteArg Double         p      = CExp Double
+  ApliteArg Int            p      = CExp Int32
+  ApliteArg Int32          p      = CExp Int32
+  ApliteArg Word           p      = CExp Word32
+  ApliteArg Word32         p      = CExp Word32
+  ApliteArg Bool           p      = CExp Bool
+  ApliteArg (UArray i e)   p      = IArr i e
   ApliteArg (IOUArray i e) Impure = Arr i e
 
 -- | If @p@ is @Pure@, converts the given function of the form
