@@ -1,7 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables, OverloadedStrings, BangPatterns #-}
 module Haste.Aplite
   ( -- * Creating Aplite functions
-    Aplite, ApliteProgram, ApliteExport, ApliteSig, ApliteCMD, aplite, compile
+    Aplite, ApliteProgram, ApliteExport, ApliteSig, ApliteCMD
+  , aplite, apliteWith, compile
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
@@ -61,6 +62,10 @@ type ApliteExport a =
 share :: (JSType a', a ~ CExp a') => a -> Aplite a
 share x = initRef x >>= unsafeFreezeRef
 
+-- | Compile an aplite function using the default code tuning.
+aplite :: forall a. ApliteExport a => ApliteProgram a -> a
+aplite = apliteWith defaultTuning
+
 -- | Compile an Aplite function and lift it into Haskell proper.
 --   Aplite functions with no observable side effects may be imported as pure
 --   Haskell functions:
@@ -83,8 +88,8 @@ share x = initRef x >>= unsafeFreezeRef
 --
 --   Note that Aplite functions are monomorphic, as @aplite@ compiles them
 --   to highly specialized, low level JavaScript.
-aplite :: forall a. ApliteExport a => CodeTuning -> ApliteProgram a -> a
-aplite t !prog = unIO (undefined :: IsPure (RetType a)) $! prog'
+apliteWith :: forall a. ApliteExport a => CodeTuning -> ApliteProgram a -> a
+apliteWith t !prog = unIO (undefined :: IsPure (RetType a)) $! prog'
   where
     prog' :: FFISig a
     prog' = ffi $! compile t prog

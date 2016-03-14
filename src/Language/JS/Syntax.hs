@@ -95,7 +95,7 @@ data Exp
   | Cond  !(Typed Exp) !(Typed Exp) !(Typed Exp) -- TODO: how to do this in ASM?
   | Call  !JSString ![Typed Exp]
   | Index !Type !ArrId !(Typed Exp)
-    deriving Eq
+    deriving (Eq, Show)
 
 newArr :: Type -> Typed Exp -> Typed Exp
 newArr t sz = Typed (Arr t) $ Call "malloc" [toTypedExp (sizeof t), sz]
@@ -142,7 +142,7 @@ instance Num (Typed Exp) where
 data Typed a = Typed
   { typeOf  :: !Type
   , untyped :: !a
-  } deriving Eq
+  } deriving (Eq, Show)
 
 typed :: Type -> a -> Typed a
 typed = Typed
