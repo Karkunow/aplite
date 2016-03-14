@@ -35,12 +35,10 @@ instance JSType e => ReturnValue (IArr i e) where
 -- into JS
 class ReturnValue (Res f) => Export f where
   type Res f
-  type ExportSig f
   mkFun :: Int -> [Param] -> f -> Fun (Res f)
 
 instance (JSType a, Export b) => Export (CExp a -> b) where
   type Res (CExp a -> b) = Res b
-  type ExportSig (CExp a -> b) = a -> ExportSig b
   mkFun n as f = mkFun (succ n) (param t (MkId n') : as) (f argexp)
     where n' = S.cons 'n' (toJSString n)
           t = jsType (undefined :: CExp a)
@@ -48,7 +46,6 @@ instance (JSType a, Export b) => Export (CExp a -> b) where
 
 instance (JSType i, JSType e, Export b) => Export (Arr i e -> b) where
   type Res (Arr i e -> b) = Res b
-  type ExportSig (Arr i e -> b) = IArr i e -> ExportSig b
   mkFun n as f = mkFun (succ n) (param t (MkId name) : as) (f argexp)
     where t = Arr (jsType (undefined :: CExp e))
           name = S.cons 'a' (toJSString n)
@@ -56,7 +53,6 @@ instance (JSType i, JSType e, Export b) => Export (Arr i e -> b) where
 
 instance ReturnValue a => Export (Program ApliteCMD a) where
   type Res (Program ApliteCMD a) = a
-  type ExportSig (Program ApliteCMD a) = RetVal a
   mkFun n as body = Fun
       { cgStartId    = n
       , expFunParams = reverse as
