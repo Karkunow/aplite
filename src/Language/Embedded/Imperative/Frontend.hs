@@ -21,13 +21,14 @@ import System.IO.Unsafe
 import Data.Proxy
 #endif
 
-import Control.Monad.Operational.Higher
+import Control.Monad.Operational.Higher hiding (Return)
 -- import System.IO.Fake
 import Language.Embedded.Expression
 import Language.Embedded.Imperative.CMD
 import Language.Embedded.Imperative.Frontend.General
 import Language.JS.CompExp
 import qualified Language.JS.Syntax as JS
+import Language.JS.Expression (CExp)
 -- import Language.Embedded.Imperative.Args
 
 
@@ -305,6 +306,9 @@ for range = singleE . For range
 -- | Break out from a loop
 break :: (ControlCMD (IExp instr) :<: instr) => ProgramT instr m ()
 break = singleE Break
+
+instance ReturnValue (CExp a) where
+  return_ = singleE . Return . RetExp
 
 -- | Assertion
 assert :: (ControlCMD (IExp instr) :<: instr)

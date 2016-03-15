@@ -18,9 +18,8 @@ compile :: Export a => CodeTuning -> a -> JSString
 compile ct f =
     wrapped ct $ f' {funParams = params}
   where
-    Fun startid params prog = mkFun 0 [] f
-    f' = generate startid prog
+    (params, prog) = export 0 [] f
+    f' = generate prog
 
-generate :: (ReturnValue a, Interp instr JSGen, HFunctor instr)
-        => Int -> Program instr a -> Func
-generate startid = runJSGen startid . interpret
+generate :: Aplite () -> Func
+generate = runJSGen 0 . interpret

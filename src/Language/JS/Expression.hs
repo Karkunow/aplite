@@ -653,6 +653,3 @@ compJSExp = simpleMatch (\(T s) -> go s) . unCExp
       i' <- compJSExp' i
       let Arr t' = t
       pure (typed t (JS.Index t' arr i'))
-
-instance JSType a => ReturnValue (CExp a) where
-  returnStmt x = Just $ Ret <$> compJSExp x

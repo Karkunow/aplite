@@ -132,10 +132,17 @@ compControlCMD (CMD.For (lo,step,hi) body) = do
           | step >  0    = n := (i + step') -- [cexp| $id:n = $id:n + $step |]
           | step <  0    = n := (i + negStep') -- [cexp| $id:n = $id:n - $(negate step) |]
     addStm $ JS.For (n := loe) conte stepstm bodyc -- [cstm| for ($id:n=$loe; $conte; $stepe) {$items:bodyc} |]
-compControlCMD CMD.Break = addStm JS.Break
+compControlCMD CMD.Break =
+  addStm JS.Break
+compControlCMD (CMD.Return (CMD.RetArr (ArrComp arr))) =
+  addStm (JS.Ret $ Typed (Arr Signed) (Id $ MkId arr))
+compControlCMD (CMD.Return (CMD.RetExp ex)) =
+  compExp ex >>= addStm . JS.Ret
+compControlCMD (CMD.Return CMD.RetUnit) =
+  addStm (JS.Ret $ Typed Signed (Lit 0))
 compControlCMD (CMD.Assert cond msg) = do
-    c <- compExp cond
-    addStm $ JS.Assert c (S.pack msg) -- [cstm| assert($c && $msg); |]
+  c <- compExp cond
+  addStm $ JS.Assert c (S.pack msg) -- [cstm| assert($c && $msg); |]
 
 {-
 compIOMode :: IOMode -> String

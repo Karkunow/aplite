@@ -89,17 +89,11 @@ addArg arg = modify $ \env -> env {jsArgs = arg : jsArgs env}
 addParam :: Param -> JSGen ()
 addParam p = modify $ \env -> env {jsParams = p : jsParams env}
 
-runJSGen :: forall a. ReturnValue a => Int -> JSGen a -> Func
+runJSGen :: forall a. Int -> JSGen () -> Func
 runJSGen startid m =
-    case evalState (runContT m' (const get)) (emptyEnv startid) of
+    case evalState (runContT m (const get)) (emptyEnv startid) of
       env -> mkFunc env
   where
-    m' = do
-      x <- m
-      case returnStmt x of
-        Just stm -> stm >>= addFinalStm
-        _        -> return ()
-
     mkFunc env = Func
       { funParams  = reverse $ jsParams env
       , funLocals  = reverse $ jsLocals env
@@ -108,11 +102,5 @@ runJSGen startid m =
 
 evalJSGen :: Int -> ContT a (State JSEnv) a -> a
 evalJSGen startid m = evalState (runContT m return) (emptyEnv startid)
-
-class ReturnValue a where
-  returnStmt :: a -> Maybe (JSGen Stmt)
-
-instance ReturnValue () where
-  returnStmt _ = Nothing
 
 -- TODO: inModule, inNewBlock, inNewFunction, wrapMain, collectArgs, collectDefinitions?, liftSharedLocals?

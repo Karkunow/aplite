@@ -20,6 +20,8 @@ module Language.Embedded.Imperative.CMD
   , borderIncl
   , IxRange
   , ControlCMD (..)
+  , ReturnValue (..)
+  , Ret (..)
     -- * Pointers
   , IsPointer (..)
   , PtrCMD (..)
@@ -64,7 +66,7 @@ import Data.Traversable
 import Data.Proxy
 #endif
 
-import Control.Monad.Operational.Higher
+import Control.Monad.Operational.Higher hiding (Return)
 
 import Language.Embedded.Expression
 import Language.Embedded.Traversal
@@ -244,6 +246,34 @@ borderIncl _        = False
 -- index which may be inclusive or exclusive.
 type IxRange i = (i, Int, Border i)
 
+data Ret a where
+  RetExp  :: CompJSExp exp => exp a -> Ret (exp a)
+  RetArr  :: Arr i a -> Ret (exp a)
+  RetUnit :: Ret ()
+
+{-
+    :: ( VarPred (IExp instr) a
+       , VarPred (IExp instr) i
+       , Integral i
+       , Ix i
+       , ArrCMD (IExp instr) :<: instr
+       )
+    => Arr i a -> IExp instr i -> IExp instr a -> ProgramT instr m ()
+-}
+
+class ReturnValue a where
+  return_ :: (ControlCMD (IExp instr) :<: instr)
+          => a -> ProgramT instr m ()
+
+instance ReturnValue () where
+  return_ _ = singleE $ Return RetUnit
+
+instance ReturnValue (Arr i e) where
+  return_ = singleE . Return . RetArr
+
+instance ReturnValue (IArr i e) where
+  return_ (IArrComp arr) = singleE $ Return $ RetArr (ArrComp arr)
+
 data ControlCMD exp prog a
   where
     If     :: exp Bool -> prog () -> prog () -> ControlCMD exp prog ()
@@ -251,6 +281,7 @@ data ControlCMD exp prog a
     For    :: (VarPred exp n, Integral n) =>
               IxRange (exp n) -> (exp n -> prog ()) -> ControlCMD exp prog ()
     Break  :: ControlCMD exp prog ()
+    Return :: Ret a -> ControlCMD exp prog ()
     Assert :: exp Bool -> String -> ControlCMD exp prog ()
 
 instance HFunctor (ControlCMD exp)
@@ -259,6 +290,7 @@ instance HFunctor (ControlCMD exp)
     hfmap g (While cont body) = While (g cont) (g body)
     hfmap g (For ir body)     = For ir (g . body)
     hfmap _ Break             = Break
+    hfmap _ (Return r)        = Return r
     hfmap _ (Assert cond msg) = Assert cond msg
 
 instance DryInterp (ControlCMD exp)
@@ -267,6 +299,7 @@ instance DryInterp (ControlCMD exp)
     dryInterp (While _ _)  = return ()
     dryInterp (For _ _)    = return ()
     dryInterp Break        = return ()
+    dryInterp (Return _)   = return ()
     dryInterp (Assert _ _) = return ()
 
 type instance IExp (ControlCMD e)       = e
@@ -568,6 +601,7 @@ runControlCMD (For (lo,step,hi) body) = loop (evalExp lo)
       | cont i    = body (valExp i) >> loop (i + fromIntegral step)
       | otherwise = return ()
 runControlCMD Break = error "cannot run programs involving break"
+runControlCMD (Return _) = error "cannot run programs involving return"
 runControlCMD (Assert cond msg) = unless (evalExp cond) $ error $
     "Assertion failed: " ++ msg
 

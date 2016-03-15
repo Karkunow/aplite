@@ -38,9 +38,6 @@ import Data.Array.Unboxed
 type Index = Word32
 type Length = Index
 
--- | The Aplite monad. All Aplite programs execute in this monad.
-type Aplite a = Program ApliteCMD a
-
 -- | A Haskell type which has a corresponding Aplite type. A Haskell type has
 --   a corresponding Aplite type if it is exportable using "Haste.Foreign",
 --   if its parameters return value are all representable in Aplite, and if
