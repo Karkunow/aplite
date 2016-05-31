@@ -92,7 +92,7 @@ library
     deepseq,
     exception-transformers,
     mtl,
-    operational-alacarte,
+    operational-alacarte < 0.2,
     tagged,
       -- tagged needed for GHC 7.6
     srcloc,
