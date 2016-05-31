@@ -3,7 +3,7 @@
 module Haste.Aplite
   ( -- * Creating Aplite functions
     Aplite, ApliteExport, ApliteSig, ApliteCMD
-  , aplite, apliteWith, compile
+  , aplite, apliteWith, compile, value
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
