@@ -107,7 +107,7 @@ type family ApliteSig a where
 --   that are observable from Haskell.
 data Pure
 
--- | Denotes an import Aplite signature: the function may perform arbitrary
+-- | Denotes an impure Aplite signature: the function may perform arbitrary
 --   side effects.
 data Impure
 
