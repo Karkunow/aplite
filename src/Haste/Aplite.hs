@@ -3,7 +3,7 @@
 module Haste.Aplite
   ( -- * Creating Aplite functions
     Aplite, ApliteExport, ApliteSig, ApliteCMD
-  , aplite, apliteWith, compile, value
+  , aplite, apliteWith, apliteSpec, apliteSpecWith, compile, specialize, value
     -- * Tuning Aplite code to the browser environment
   , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
     -- * Aplite language stuff
@@ -22,10 +22,12 @@ module Haste.Aplite
 import Control.Monad.Operational.Higher
 import Language.JS.Print
 import Language.JS.Export
+import Language.JS.Syntax (Func)
 import Language.Embedded.Backend.JS
-import Haste.Foreign
+import Haste.Foreign hiding (has, get, set)
 import Haste.Prim (veryUnsafePerformIO)
 import Haste (JSString)
+import Haste.Performance
 
 import Language.JS.Expression
 import Language.Embedded.Imperative
@@ -34,6 +36,8 @@ import Data.Int
 import Data.Word
 import Data.Array.IO
 import Data.Array.Unboxed
+import Data.Dynamic
+import Data.IORef
 
 type Index = Word32
 type Length = Index
@@ -83,10 +87,108 @@ aplite = apliteWith defaultTuning
 --   Note that Aplite functions are monomorphic, as @aplite@ compiles them
 --   to highly specialized, low level JavaScript.
 apliteWith :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
-apliteWith t !prog = unIO (undefined :: Purity a) $! prog'
+apliteWith t !prog = unIO (undefined :: Purity a) prog'
   where
     prog' :: FFISig a
-    prog' = ffi $! compile t prog
+    !prog' = ffi $! compile t prog
+
+-- | Compile an Aplite program from an AST.
+apliteFromAST :: forall a. ApliteExport a => CodeTuning -> Func -> a
+apliteFromAST t !prog = unIO (undefined :: Purity a) prog'
+  where
+    prog' :: FFISig a
+    !prog' = ffi $! compileFromAST t prog
+
+-- | A specialization handle: call 'specialize' on it to specialize its
+--   associated function.
+data SpecHandle a = SpecHandle
+  { funcAst  :: Func
+  , funcCode :: IORef Dynamic
+  }
+
+-- | Create a specializeable Aplite function. Call 'specialize' on its
+--   specialization handle to tune it to the current execution environment
+--   and a set of inputs.
+apliteSpecWith :: forall a. (Typeable a, ApliteExport a)
+               => CodeTuning -> ApliteSig a -> (a, SpecHandle a)
+apliteSpecWith ct !prog = veryUnsafePerformIO $ do
+  r <- newIORef $ toDyn $ (apliteWith ct prog :: a)
+  let prog' = veryUnsafePerformIO $ do
+        f <- readIORef r
+        return $ fromDyn f (error "impossible!")
+  return (prog', SpecHandle (compileToAST prog) r)
+
+-- | Like 'apliteSpecWith', but the function is initially compiled with
+--   'defaultTuning'.
+apliteSpec :: forall a. (Typeable a, ApliteExport a)
+           => ApliteSig a -> (a, SpecHandle a)
+apliteSpec = apliteSpecWith defaultTuning
+
+-- | Specialize the Aplite function corresponding to the given 'SpecHandle' to
+--   the current execution environment and given input.
+specialize :: forall a. (Typeable a, ApliteExport a, Optimize a)
+           => HeapSize
+           -> SpecHandle a
+           -> Opt a
+specialize hs sh = veryUnsafePerformIO $ do
+  let a = apliteFromAST defaultTuning (funcAst sh) :: a
+      b = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a
+  -- TODO: maybe free memory from old function here?
+  return $ choose (funcCode sh) a b (toDyn a) (toDyn b)
+
+type family Opt a where
+  Opt (a -> b) = a -> Opt b
+  Opt (IO a)   = IO ()
+  Opt a        = IO ()
+
+class Optimize a where
+  choose :: IORef Dynamic -> a -> a -> Dynamic -> Dynamic -> Opt a
+  nop :: a -> Opt a
+
+instance Optimize b => Optimize (a -> b) where
+  choose outer f g f0 g0 x = choose outer (f x) (g x) f0 g0
+  nop f x = nop (f x)
+
+instance Optimize (IO a) where
+  choose ref f g f0 g0 = do
+    tf <- f >> time f
+    tg <- g >> time g
+    writeIORef ref $ if tf <= tg then f0 else g0
+  nop _ = return ()
+
+instance {-# OVERLAPPABLE #-} Opt a ~ IO () => Optimize a where
+  choose ref f g f0 g0 = do
+    tf <- time (return $! f)
+    tg <- time (return $! g)
+    writeIORef ref $ if tf <= tg then f0 else g0
+  nop _ = return ()
+
+printany :: JSAny -> IO ()
+printany = ffi "(function(x){console.log(x.toString());})"
+
+set :: Opaque a -> JSString -> JSAny -> IO ()
+set = ffi "(function(outer,key,inner){outer[key] = inner;})"
+
+get :: Opaque a -> JSString -> IO JSAny
+get = ffi "(function(outer,key){return outer[key];})"
+
+has :: Opaque a -> JSString -> IO Bool
+has = ffi "(function(outer,key){return (typeof outer[key] != 'undefined');})"
+
+-- | Time the execution of a function.
+time :: IO a -> IO Double
+time m = do
+  t0 <- now
+  x <- m
+  t1 <- x `seq` now
+  pure (t1-t0)
+
+-- | The "inverse" of the given code tuning: ASM.js become plain JS and vice
+--   versa.
+otherStyle :: HeapSize -> CodeTuning -> CodeTuning
+otherStyle hs t
+  | codeStyle t == ASMJS = defaultTuning
+  | otherwise            = asmjsTuning {explicitHeap = Just hs}
 
 -- | The FFI signature corresponding to the given type signature. Always in the
 --   IO monad due to how Haste.Foreign works.

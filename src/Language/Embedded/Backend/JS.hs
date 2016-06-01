@@ -15,11 +15,16 @@ import Language.JS.Syntax (Func (..))
 import Language.Embedded.Imperative
 
 compile :: Export a => CodeTuning -> a -> JSString
-compile ct f =
-    wrapped ct $ f' {funParams = params}
+compile ct = compileFromAST ct . compileToAST
+
+compileToAST :: Export a => a -> Func
+compileToAST f = f' {funParams = params}
   where
     (params, prog) = export 0 [] f
     f' = generate prog
+
+compileFromAST :: CodeTuning -> Func -> JSString
+compileFromAST = wrapped
 
 generate :: Aplite () -> Func
 generate = runJSGen 0 . interpret
