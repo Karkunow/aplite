@@ -87,10 +87,7 @@ aplite = apliteWith defaultTuning
 --   Note that Aplite functions are monomorphic, as @aplite@ compiles them
 --   to highly specialized, low level JavaScript.
 apliteWith :: forall a. ApliteExport a => CodeTuning -> ApliteSig a -> a
-apliteWith t !prog = unIO (undefined :: Purity a) prog'
-  where
-    prog' :: FFISig a
-    !prog' = ffi $! compile t prog
+apliteWith t !prog = apliteFromAST t $ compileToAST prog
 
 -- | Compile an Aplite program from an AST.
 apliteFromAST :: forall a. ApliteExport a => CodeTuning -> Func -> a
@@ -126,54 +123,38 @@ apliteSpec = apliteSpecWith defaultTuning
 
 -- | Specialize the Aplite function corresponding to the given 'SpecHandle' to
 --   the current execution environment and given input.
-specialize :: forall a. (Typeable a, ApliteExport a, Optimize a)
+specialize :: forall a. (Typeable a, ApliteExport a, Specialize a)
            => HeapSize
            -> SpecHandle a
-           -> Opt a
+           -> Spec a
 specialize hs sh = veryUnsafePerformIO $ do
   let a = apliteFromAST defaultTuning (funcAst sh) :: a
       b = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a
   -- TODO: maybe free memory from old function here?
   return $ choose (funcCode sh) a b (toDyn a) (toDyn b)
 
-type family Opt a where
-  Opt (a -> b) = a -> Opt b
-  Opt (IO a)   = IO ()
-  Opt a        = IO ()
+type family Spec a where
+  Spec (a -> b) = a -> Spec b
+  Spec (IO a)   = IO ()
+  Spec a        = IO ()
 
-class Optimize a where
-  choose :: IORef Dynamic -> a -> a -> Dynamic -> Dynamic -> Opt a
-  nop :: a -> Opt a
+class Specialize a where
+  choose :: IORef Dynamic -> a -> a -> Dynamic -> Dynamic -> Spec a
 
-instance Optimize b => Optimize (a -> b) where
+instance Specialize b => Specialize (a -> b) where
   choose outer f g f0 g0 x = choose outer (f x) (g x) f0 g0
-  nop f x = nop (f x)
 
-instance Optimize (IO a) where
+instance Specialize (IO a) where
   choose ref f g f0 g0 = do
     tf <- f >> time f
     tg <- g >> time g
     writeIORef ref $ if tf <= tg then f0 else g0
-  nop _ = return ()
 
-instance {-# OVERLAPPABLE #-} Opt a ~ IO () => Optimize a where
+instance {-# OVERLAPPABLE #-} Spec a ~ IO () => Specialize a where
   choose ref f g f0 g0 = do
     tf <- time (return $! f)
     tg <- time (return $! g)
     writeIORef ref $ if tf <= tg then f0 else g0
-  nop _ = return ()
-
-printany :: JSAny -> IO ()
-printany = ffi "(function(x){console.log(x.toString());})"
-
-set :: Opaque a -> JSString -> JSAny -> IO ()
-set = ffi "(function(outer,key,inner){outer[key] = inner;})"
-
-get :: Opaque a -> JSString -> IO JSAny
-get = ffi "(function(outer,key){return outer[key];})"
-
-has :: Opaque a -> JSString -> IO Bool
-has = ffi "(function(outer,key){return (typeof outer[key] != 'undefined');})"
 
 -- | Time the execution of a function.
 time :: IO a -> IO Double
@@ -182,13 +163,6 @@ time m = do
   x <- m
   t1 <- x `seq` now
   pure (t1-t0)
-
--- | The "inverse" of the given code tuning: ASM.js become plain JS and vice
---   versa.
-otherStyle :: HeapSize -> CodeTuning -> CodeTuning
-otherStyle hs t
-  | codeStyle t == ASMJS = defaultTuning
-  | otherwise            = asmjsTuning {explicitHeap = Just hs}
 
 -- | The FFI signature corresponding to the given type signature. Always in the
 --   IO monad due to how Haste.Foreign works.
