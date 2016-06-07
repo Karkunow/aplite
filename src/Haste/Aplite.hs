@@ -127,11 +127,11 @@ specialize :: forall a. (Typeable a, ApliteExport a, Specialize a)
            => HeapSize
            -> SpecHandle a
            -> Spec a
-specialize hs sh = veryUnsafePerformIO $ do
-  let a = apliteFromAST defaultTuning (funcAst sh) :: a
-      b = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a
-  -- TODO: maybe free memory from old function here?
-  return $ choose (funcCode sh) a b (toDyn a) (toDyn b)
+specialize hs sh = choose (funcCode sh) a b (toDyn a) (toDyn b)
+  where
+    -- TODO: maybe free memory from old function here?
+    a = apliteFromAST defaultTuning (funcAst sh) :: a
+    b = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a
 
 type family Spec a where
   Spec (a -> b) = a -> Spec b
