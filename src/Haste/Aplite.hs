@@ -38,7 +38,6 @@ import Data.Int
 import Data.Word
 import Data.Array.IO
 import Data.Array.Unboxed
-import Data.Dynamic
 import Data.IORef
 
 type Index = Word32
@@ -102,42 +101,40 @@ apliteFromAST t !prog = unIO (undefined :: Purity a) prog'
 --   associated function.
 data SpecHandle a = SpecHandle
   { funcAst  :: Func
-  , funcCode :: IORef Dynamic
+  , funcCode :: IORef a
   }
 
 -- | Create a specializeable Aplite function. Call 'specialize' on its
 --   specialization handle to tune it to the current execution environment
 --   and a set of inputs.
-apliteSpecWith :: forall a. (Typeable a, ApliteExport a)
+apliteSpecWith :: forall a. ApliteExport a
                => CodeTuning -> ApliteSig a -> (a, SpecHandle a)
 apliteSpecWith ct !prog = veryUnsafePerformIO $ do
-  r <- newIORef $ toDyn $ (apliteWith ct prog :: a)
-  let prog' = veryUnsafePerformIO $ do
-        f <- readIORef r
-        return $ fromDyn f (error "impossible!")
-  return (prog', SpecHandle (compileToAST prog) r)
+  r <- newIORef (apliteWith ct prog :: a)
+  return ( veryUnsafePerformIO $ readIORef r
+         , SpecHandle (compileToAST prog) r)
 
 -- | Like 'apliteSpecWith', but the function is initially compiled with
 --   'defaultTuning'.
-apliteSpec :: forall a. (Typeable a, ApliteExport a)
+apliteSpec :: forall a. ApliteExport a
            => ApliteSig a -> (a, SpecHandle a)
 apliteSpec = apliteSpecWith defaultTuning
 
 -- | Specialize the Aplite function corresponding to the given 'SpecHandle' to
 --   the current execution environment and given input.
-specialize :: forall a. (Typeable a, ApliteExport a)
+specialize :: forall a. ApliteExport a
            => HeapSize
            -> SpecHandle a
            -> (a -> IO Double)
            -> IO ()
-specialize hs sh bench = do
+specialize hs SpecHandle{..} bench = do
     -- TODO: maybe free memory from old function here?
     tf <- bench f
     tg <- bench g
-    writeIORef (funcCode sh) . toDyn $ if tf <= tg then f else g
+    writeIORef funcCode $ if tf <= tg then f else g
   where
-    f = apliteFromAST defaultTuning (funcAst sh) :: a
-    g = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a    
+    f = apliteFromAST defaultTuning funcAst :: a
+    g = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) funcAst :: a    
 
 -- | Time the execution of a function and evaluation to head normal form of its
 --   return value.
