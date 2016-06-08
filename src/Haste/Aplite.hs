@@ -3,9 +3,11 @@
 module Haste.Aplite
   ( -- * Creating Aplite functions
     Aplite, ApliteExport, ApliteSig, ApliteCMD
-  , aplite, apliteWith, apliteSpec, apliteSpecWith, compile, specialize, value
+  , aplite, apliteWith, apliteSpec, apliteSpecWith, compile, value
     -- * Tuning Aplite code to the browser environment
-  , CodeTuning (..), CodeStyle (..), CodeHeader (..), defaultTuning, asmjsTuning
+  , CodeTuning (..), CodeStyle (..), CodeHeader (..)
+  , defaultTuning, asmjsTuning
+  , specialize, time
     -- * Aplite language stuff
   , CExp, ArrView, Index, Length
   , Bits (..), shiftRL
@@ -123,40 +125,22 @@ apliteSpec = apliteSpecWith defaultTuning
 
 -- | Specialize the Aplite function corresponding to the given 'SpecHandle' to
 --   the current execution environment and given input.
-specialize :: forall a. (Typeable a, ApliteExport a, Specialize a)
+specialize :: forall a. (Typeable a, ApliteExport a)
            => HeapSize
            -> SpecHandle a
-           -> Spec a
-specialize hs sh = choose (funcCode sh) a b (toDyn a) (toDyn b)
-  where
+           -> (a -> IO Double)
+           -> IO ()
+specialize hs sh bench = do
     -- TODO: maybe free memory from old function here?
-    a = apliteFromAST defaultTuning (funcAst sh) :: a
-    b = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a
+    tf <- bench f
+    tg <- bench g
+    writeIORef (funcCode sh) . toDyn $ if tf <= tg then f else g
+  where
+    f = apliteFromAST defaultTuning (funcAst sh) :: a
+    g = apliteFromAST (asmjsTuning {explicitHeap = Just hs}) (funcAst sh) :: a    
 
-type family Spec a where
-  Spec (a -> b) = a -> Spec b
-  Spec (IO a)   = IO ()
-  Spec a        = IO ()
-
-class Specialize a where
-  choose :: IORef Dynamic -> a -> a -> Dynamic -> Dynamic -> Spec a
-
-instance Specialize b => Specialize (a -> b) where
-  choose outer f g f0 g0 x = choose outer (f x) (g x) f0 g0
-
-instance Specialize (IO a) where
-  choose ref f g f0 g0 = do
-    tf <- f >> time f
-    tg <- g >> time g
-    writeIORef ref $ if tf <= tg then f0 else g0
-
-instance {-# OVERLAPPABLE #-} Spec a ~ IO () => Specialize a where
-  choose ref f g f0 g0 = do
-    tf <- time (return $! f)
-    tg <- time (return $! g)
-    writeIORef ref $ if tf <= tg then f0 else g0
-
--- | Time the execution of a function.
+-- | Time the execution of a function and evaluation to head normal form of its
+--   return value.
 time :: IO a -> IO Double
 time m = do
   t0 <- now
