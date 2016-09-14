@@ -33,7 +33,7 @@ data CodeTuning = CodeTuning
 defaultTuning :: CodeTuning
 defaultTuning = CodeTuning
   { codeStyle    = JavaScript
-  , headerDecl   = NoHeader
+  , headerDecl   = StrictHeader
   , explicitHeap = Nothing
   }
 
