@@ -96,15 +96,9 @@ library
     tagged,
       -- tagged needed for GHC 7.6
     srcloc,
-    time >= 1.5.0.1
-
-  if impl(haste)
-    build-depends:
-      haste-lib  >= 0.5.4 && < 0.6,
-      haste-prim >= 0.5.4 && < 0.6
-  else
-    build-depends:
-      haste-compiler >= 0.5.4 && < 0.6
+    time >= 1.5.0.1,
+    haste-lib  >= 0.6 && < 0.7,
+    haste-prim >= 0.6 && < 0.7
 
   if flag(old-syntactic)
     build-depends:
