@@ -107,16 +107,18 @@ data SpecHandle a = SpecHandle
 -- | Create a specializeable Aplite function. Call 'specialize' on its
 --   specialization handle to tune it to the current execution environment
 --   and a set of inputs.
-apliteSpecWith :: forall a. ApliteExport a
+apliteSpecWith :: forall a b c. (ApliteExport a, a ~ (b -> c))
                => CodeTuning -> ApliteSig a -> (a, SpecHandle a)
 apliteSpecWith ct !prog = veryUnsafePerformIO $ do
   r <- newIORef (apliteWith ct prog :: a)
-  return ( veryUnsafePerformIO $ readIORef r
+  return ( \x -> veryUnsafePerformIO $ do
+             f <- readIORef r
+             pure $ f x
          , SpecHandle (compileToAST prog) r)
 
 -- | Like 'apliteSpecWith', but the function is initially compiled with
 --   'defaultTuning'.
-apliteSpec :: forall a. ApliteExport a
+apliteSpec :: forall a b c. (ApliteExport a, a ~ (b -> c))
            => ApliteSig a -> (a, SpecHandle a)
 apliteSpec = apliteSpecWith defaultTuning
 
