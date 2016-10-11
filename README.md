@@ -2,6 +2,8 @@ Aplite
 ======
 
 An embedded, domain-specific language for high-performance web applications.
+[This paper](http://haste-lang.org/pubs/haskell16.pdf) explains the general
+idea behind it.
 
 Installation
 ------------
